@@ -167,6 +167,14 @@ fun HomeScreen(navController: NavController) {
                     style = TextStyle(fontWeight = FontWeight.ExtraBold),
                 )
             }
+            Spacer(modifier = Modifier.height(15.dp))
+            Text(
+                text = "Learn More",
+                color = colorResource(id = R.color.darkPrimary),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                style = TextStyle(fontWeight = FontWeight.ExtraBold),
+            )
 //            Row(
 //                modifier = Modifier.fillMaxWidth(),
 //                horizontalArrangement = Arrangement.SpaceBetween
