@@ -44,7 +44,7 @@ fun HomeScreen(navController: NavController) {
         modifier = Modifier.fillMaxSize()
     ) {
         Image(
-            painter = painterResource(id = R.drawable.home_bg),
+            painter = painterResource(id = R.drawable.home_bg_2),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.FillBounds
@@ -56,151 +56,189 @@ fun HomeScreen(navController: NavController) {
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White.copy(alpha = 0.8f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                border = BorderStroke(1.dp, colorResource(id = R.color.darkPrimary))
-
-            ) {
-                Column(
-                    modifier = Modifier.padding(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Eye Disease Detection",
-                        fontSize = 35.sp,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                    )
-                    Text(
-                        text = "App",
-                        fontSize = 35.sp,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(50.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-
-                Image(
-                    painter = painterResource(id = R.drawable.cataract_img2),
-                    contentDescription = "image 1",
-                    modifier = Modifier
-                        .width(130.dp),
-                    contentScale = ContentScale.Crop
-                )
-
-                Image(
-                    painter = painterResource(id = R.drawable.glaucoma2_img),
-                    contentDescription = "image 1",
-                    modifier = Modifier
-                        .width(130.dp),
-                    contentScale = ContentScale.Crop
-                )
-            }
+            Spacer(modifier = Modifier.height(200.dp))
+//            Row(
+//                modifier = Modifier.fillMaxWidth(),
+//                horizontalArrangement = Arrangement.SpaceBetween
+//            ) {
+//
+//                Image(
+//                    painter = painterResource(id = R.drawable.cataract_img2),
+//                    contentDescription = "image 1",
+//                    modifier = Modifier
+//                        .width(130.dp),
+//                    contentScale = ContentScale.Crop
+//                )
+//
+//                Image(
+//                    painter = painterResource(id = R.drawable.glaucoma2_img),
+//                    contentDescription = "image 1",
+//                    modifier = Modifier
+//                        .width(130.dp),
+//                    contentScale = ContentScale.Crop
+//                )
+//            }
             Spacer(modifier = Modifier.height(30.dp))
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.LightGray,
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
-                shape = RoundedCornerShape(10.dp)
+//            Card(
+//                colors = CardDefaults.cardColors(
+//                    containerColor = colorResource(id = R.color.normalPrimary),
+//                ),
+//                elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
+//                shape = RoundedCornerShape(10.dp)
+//            ) {
+//                Box(
+//                    modifier = Modifier
+//                        .fillMaxWidth()
+//                        .padding(15.dp),
+//                    contentAlignment = Alignment.Center
+//                ) {
+//                    Text(
+//                        text = "CATARACT AND GLAUCOMA",
+//                        color = Color.White,
+//                        fontSize = 20.sp,
+//                        textAlign = TextAlign.Center,
+//                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
+//                    )
+//                }
+//            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(15.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(15.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "CATARACT AND GLAUCOMA",
-//                        color = colorResource(id = R.color.darkPrimary),
-                        color = Color.Black,
-                        fontSize = 20.sp,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                    )
-                }
+                Text(
+                    text = "CATARACT AND GLAUCOMA",
+                    color = colorResource(id = R.color.darkPrimary),
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                )
             }
             Spacer(modifier = Modifier.height(32.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+            Image(
+                painter = painterResource(id = R.drawable.scan_eye),
+                contentDescription = "image 1",
+                colorFilter = ColorFilter.tint(colorResource(id = R.color.darkPrimary)),
+                modifier = Modifier
+                    .width(80.dp)
+                    .height(80.dp),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                modifier = Modifier.padding(5.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colorResource(id = R.color.darkPrimary)
+                ),
+                shape = RoundedCornerShape(10.dp),
+                onClick = { navController.navigate("camera") }
             ) {
-
-                Column(
-                    modifier = Modifier.padding(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.baseline_camera_alt_24),
-                        contentDescription = "image 1",
-                        colorFilter = ColorFilter.tint(Color.DarkGray),
-                        modifier = Modifier
-                            .padding(10.dp)
-                            .width(80.dp)
-                            .height(80.dp),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Button(
-                        modifier = Modifier.padding(5.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colorResource(id = R.color.darkPrimary)
-                        ),
-
-                        onClick = { navController.navigate("camera") }
-                    ) {
-                        Text(
-                            text = "CAMERA",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center,
-                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.padding(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.baseline_collections_24),
-                        contentDescription = "image 1",
-                        colorFilter = ColorFilter.tint(Color.DarkGray),
-                        modifier = Modifier
-                            .padding(10.dp)
-                            .width(80.dp)
-                            .height(80.dp),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Button(
-                        modifier = Modifier.padding(5.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colorResource(id = R.color.darkPrimary)
-                        ),
-                        onClick = { navController.navigate("camera") }
-                    ) {
-                        Text(
-                            text = "UPLOAD IMAGE",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center,
-                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                        )
-                    }
-                }
+                Text(
+                    text = "SCAN EYE NOW",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                )
             }
+            Spacer(modifier = Modifier.height(15.dp))
+            Text(
+                text = "OR",
+                color = Color.DarkGray,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                style = TextStyle(fontWeight = FontWeight.ExtraBold),
+            )
+            Spacer(modifier = Modifier.height(15.dp))
+            Button(
+                modifier = Modifier.padding(5.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colorResource(id = R.color.darkPrimary)
+                ),
+                shape = RoundedCornerShape(10.dp),
+                onClick = { navController.navigate("camera") }
+            ) {
+                Text(
+                    text = "UPLOAD IMAGE",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                )
+            }
+//            Row(
+//                modifier = Modifier.fillMaxWidth(),
+//                horizontalArrangement = Arrangement.SpaceBetween
+//            ) {
+//
+//                Column(
+//                    modifier = Modifier.padding(10.dp),
+//                    horizontalAlignment = Alignment.CenterHorizontally
+//                ) {
+//                    Image(
+//                        painter = painterResource(id = R.drawable.baseline_camera_alt_24),
+//                        contentDescription = "image 1",
+//                        colorFilter = ColorFilter.tint(Color.DarkGray),
+//                        modifier = Modifier
+//                            .padding(10.dp)
+//                            .width(80.dp)
+//                            .height(80.dp),
+//                        contentScale = ContentScale.Crop
+//                    )
+//                    Spacer(modifier = Modifier.height(5.dp))
+//
+//                    Button(
+//                        modifier = Modifier.padding(5.dp),
+//                        colors = ButtonDefaults.buttonColors(
+//                            containerColor = colorResource(id = R.color.darkPrimary)
+//                        ),
+//
+//                        onClick = { navController.navigate("camera") }
+//                    ) {
+//                        Text(
+//                            text = "CAMERA",
+//                            color = Color.White,
+//                            fontSize = 16.sp,
+//                            textAlign = TextAlign.Center,
+//                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+//                        )
+//                    }
+//                }
+//
+//                Column(
+//                    modifier = Modifier.padding(10.dp),
+//                    horizontalAlignment = Alignment.CenterHorizontally
+//                ) {
+//                    Image(
+//                        painter = painterResource(id = R.drawable.baseline_collections_24),
+//                        contentDescription = "image 1",
+//                        colorFilter = ColorFilter.tint(Color.DarkGray),
+//                        modifier = Modifier
+//                            .padding(10.dp)
+//                            .width(80.dp)
+//                            .height(80.dp),
+//                        contentScale = ContentScale.Crop
+//                    )
+//                    Spacer(modifier = Modifier.height(5.dp))
+//
+//                    Button(
+//                        modifier = Modifier.padding(5.dp),
+//                        colors = ButtonDefaults.buttonColors(
+//                            containerColor = colorResource(id = R.color.darkPrimary)
+//                        ),
+//                        onClick = { navController.navigate("camera") }
+//                    ) {
+//                        Text(
+//                            text = "UPLOAD IMAGE",
+//                            color = Color.White,
+//                            fontSize = 16.sp,
+//                            textAlign = TextAlign.Center,
+//                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+//                        )
+//                    }
+//                }
+//            }
 //            Button(onClick = { navController.navigate("camera") }) {
 //                Text(text = "Start Eye Scan")
 //            }
