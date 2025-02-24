@@ -26,17 +26,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             EyeDiseaseAppTheme {
                 Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ){
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = "home") {
-                        composable("home") { HomeScreen(navController) }
-                        composable("camera") { CameraScreen() }
-                    }
+                    NavGraph(navController = navController)
                 }
-
             }
+
         }
     }
 }
+

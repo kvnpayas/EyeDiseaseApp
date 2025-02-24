@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.eyediseaseapp"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -63,4 +63,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.camera:camera-extensions:1.4.1")
+
+    implementation("org.tensorflow:tensorflow-lite:2.11.0")
+    implementation("androidx.activity:activity-compose:1.10.0")
 }
