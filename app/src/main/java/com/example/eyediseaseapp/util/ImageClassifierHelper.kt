@@ -11,7 +11,7 @@ import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
-class ImageClassifierHelper(private val context: Context, private val modelFileName: String) {
+class ImageClassifierHelper(private val context: Context, private val modelFileName: String, private val numClasses: Int = 3) {
 
     private var tflite: Interpreter? = null
     private var inputImageWidth: Int = 0
@@ -53,7 +53,7 @@ class ImageClassifierHelper(private val context: Context, private val modelFileN
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputImageWidth, inputImageHeight, true)
         val byteBuffer = convertBitmapToByteBuffer(resizedBitmap)
         Log.d("ImageClassifierHelper", "Bitmap converted to ByteBuffer")
-        val output = Array(1) { FloatArray(1) }
+        val output = Array(1) { FloatArray(numClasses) }
         tflite?.run(byteBuffer, output)
         Log.d("ImageClassifierHelper", "Inference completed")
         return output[0].toList()
