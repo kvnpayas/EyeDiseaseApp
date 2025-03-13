@@ -1,6 +1,7 @@
 package com.example.eyediseaseapp
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -119,13 +120,31 @@ fun HomeScreen(navController: NavController) {
             }
             Spacer(modifier = Modifier.height(15.dp))
             Text(
-                text = "Learn More",
+                modifier = Modifier.clickable {
+                    navController.navigate("aboutUs")
+                },
+                text = "About Us",
                 color = colorResource(id = R.color.darkPrimary),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
                 style = TextStyle(fontWeight = FontWeight.ExtraBold),
             )
         }
+    }
+}
+
+@Composable
+fun AboutUsScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "This is the About Us Page",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
