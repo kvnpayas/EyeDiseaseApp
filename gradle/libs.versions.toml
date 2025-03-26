@@ -10,6 +10,8 @@ activityCompose = "1.10.0"
 composeBom = "2024.04.01"
 navigation = "2.8.6"
 
+tasksVision = "latest.release"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -26,6 +28,8 @@ androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-man
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
+
+tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "tasksVision" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

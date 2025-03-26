@@ -66,4 +66,7 @@ dependencies {
 
     implementation("org.tensorflow:tensorflow-lite:2.11.0")
     implementation("androidx.activity:activity-compose:1.10.0")
+
+
+    implementation (libs.tasks.vision)
 }
