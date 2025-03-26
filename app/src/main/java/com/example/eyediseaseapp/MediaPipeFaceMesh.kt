@@ -58,6 +58,16 @@ class MediaPipeFaceMesh(private val context: Context) {
     }
 
     private fun calculateBoundingBox(landmarks: List<NormalizedLandmark>, landmarkIndices: List<Int>, canvasWidth: Int, canvasHeight: Int): RectF? {
+        Log.d(TAG, "calculateBoundingBox input landmarkIndices: $landmarkIndices") // Log input indices
+
+        // Log landmark coordinates
+        for (index in landmarkIndices) {
+            if (index < landmarks.size) {
+                val landmark = landmarks[index]
+                Log.d(TAG, "calculate Landmark $index: x=${landmark.x()}, y=${landmark.y()}")
+            }
+        }
+
         if (landmarkIndices.isEmpty()) return null
         var minX = Float.MAX_VALUE
         var minY = Float.MAX_VALUE
@@ -66,8 +76,8 @@ class MediaPipeFaceMesh(private val context: Context) {
         for (index in landmarkIndices) {
             if (index < landmarks.size) {
                 val landmark = landmarks[index]
-                val x = landmark.x() * canvasWidth // Access as function (likely available for NormalizedLandmark)
-                val y = landmark.y() * canvasHeight // Access as function (likely available for NormalizedLandmark)
+                val x = landmark.x() * canvasWidth
+                val y = landmark.y() * canvasHeight
                 minX = min(minX, x)
                 minY = min(minY, y)
                 maxX = max(maxX, x)
@@ -75,15 +85,17 @@ class MediaPipeFaceMesh(private val context: Context) {
             }
         }
 
-        val rect = RectF(minX, minY, maxX, maxY)
-        Log.d(TAG, "Calculated Bounding Box: $rect")
+        // Calculate a small padding around the iris
+        val padding = 10f // Adjust as needed
+        val rect = RectF(minX - padding, minY - padding, maxX + padding, maxY + padding)
+        Log.d(TAG, "Calculated RectF: $rect")
         return rect
     }
 
     private fun returnLivestreamResult(result: FaceLandmarkerResult, input: MPImage) {
         Log.d(TAG, "Face landmarker result: $result")
-        val bitmap = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
+        val originalBitmap = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(originalBitmap)
         val paint = Paint()
         paint.color = Color.RED
         paint.style = Paint.Style.STROKE
@@ -93,7 +105,7 @@ class MediaPipeFaceMesh(private val context: Context) {
         var rightEyeBox: RectF? = null
 
         if (result.faceLandmarks().isNotEmpty()) {
-            val landmarks = result.faceLandmarks()[0] // Get the first (and likely only) face
+            val landmarks = result.faceLandmarks()[0]
 
             // Draw iris landmarks (existing code)
             paint.color = Color.GREEN
@@ -114,19 +126,49 @@ class MediaPipeFaceMesh(private val context: Context) {
                 }
             }
 
-            // Calculate bounding box around eyes
+            // Calculate bounding boxes around IRIS
             paint.color = Color.BLUE
-            leftEyeBox = calculateBoundingBox(landmarks, LEFT_EYE_LANDMARKS, canvas.width, canvas.height)
-            leftEyeBox?.let { canvas.drawRect(it, paint) }
-            rightEyeBox = calculateBoundingBox(landmarks, RIGHT_EYE_LANDMARKS, canvas.width, canvas.height)
-            rightEyeBox?.let { canvas.drawRect(it, paint) }
+            leftEyeBox = calculateBoundingBox(landmarks, LEFT_IRIS_LANDMARKS, canvas.width, canvas.height)
+            leftEyeBox?.let { canvas.drawRect(it, paint) } // Draw bounding box on original bitmap
+            rightEyeBox = calculateBoundingBox(landmarks, RIGHT_IRIS_LANDMARKS, canvas.width, canvas.height)
+            rightEyeBox?.let { canvas.drawRect(it, paint) } // Draw bounding box on original bitmap
 
-            // Calculate bounding box around the entire face (optional)
-            paint.color = Color.YELLOW
-            val faceBox = calculateBoundingBox(landmarks, FACE_BOUNDING_BOX_LANDMARKS, canvas.width, canvas.height)
-            faceBox?.let { canvas.drawRect(it, paint) }
+            // Crop the bitmap using the leftEyeBox
+            leftEyeBox?.let {
+                val croppedLeftBitmap = Bitmap.createBitmap(
+                    originalBitmap,
+                    it.left.toInt(),
+                    it.top.toInt(),
+                    it.width().toInt(),
+                    it.height().toInt()
+                )
+
+                // Scale the cropped bitmap to a larger size
+                val scaledBitmap = Bitmap.createScaledBitmap(croppedLeftBitmap, 400, 400, false) // Adjust size as needed
+
+                listener?.onFaceMeshResult(scaledBitmap, it, rightEyeBox)
+                return
+            }
+
+            // Crop the bitmap using the rightEyeBox (optional)
+            rightEyeBox?.let {
+                val croppedRightBitmap = Bitmap.createBitmap(
+                    originalBitmap,
+                    it.left.toInt(),
+                    it.top.toInt(),
+                    it.width().toInt(),
+                    it.height().toInt()
+                )
+                // Replace the original bitmap with the cropped right eye bitmap
+                listener?.onFaceMeshResult(croppedRightBitmap, leftEyeBox, rightEyeBox) // Send cropped bitmap and bounding box
+                return // Exit to avoid sending the full bitmap again
+            }
+
+            // Send the original bitmap (if no cropping was done)
+            listener?.onFaceMeshResult(originalBitmap, leftEyeBox, rightEyeBox)
+        } else {
+            listener?.onFaceMeshResult(originalBitmap, leftEyeBox, rightEyeBox)
         }
-        listener?.onFaceMeshResult(bitmap, leftEyeBox, rightEyeBox)
     }
 
     private fun returnLivestreamError(error: RuntimeException) {

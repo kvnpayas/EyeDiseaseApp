@@ -70,6 +70,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.eyediseaseapp.util.ImageClassifierHelper
+import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 
@@ -136,6 +138,26 @@ fun CameraView() {
     var lastLeftEyeBox by remember { mutableStateOf<RectF?>(null) }
     var lastRightEyeBox by remember { mutableStateOf<RectF?>(null) }
 
+    var results by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var bestConfidence by remember { mutableStateOf(0f) }
+    var bestClassIndex by remember { mutableStateOf(-1) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+
+    val imageClassifierHelper = remember {
+        try {
+            ImageClassifierHelper(
+                context,
+                "model_unquant.tflite",
+                3
+            )
+        } catch (e: Exception) {
+            Log.e("ImageClassifierHelper", "Error initializing TFLite model", e)
+            null
+        }
+    }
+
     mediaPipeFaceMesh.listener = object : MediaPipeFaceMesh.FaceMeshListener {
         override fun onFaceMeshResult(bitmap: Bitmap, leftEyeBox: RectF?, rightEyeBox: RectF?) {
             lastBitmap = bitmap
@@ -178,6 +200,15 @@ fun CameraView() {
                         val croppedRightEyeBitmap = cropBitmap(lastBitmap!!, lastRightEyeBox!!)
                         saveCroppedBitmap(context, croppedRightEyeBitmap, "right_eye_$name")
                     }
+
+                    coroutineScope.launch {
+                        processAndClassifyEyes(context, lastBitmap, lastLeftEyeBox, lastRightEyeBox, imageClassifierHelper, { result, confidence, index ->
+                            results = result
+                            bestConfidence = confidence
+                            bestClassIndex = index
+                        })
+                    }
+
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -321,6 +352,39 @@ fun CameraView() {
             )
         }
     }
+
+    if (results.isNotEmpty()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val className = classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+                val formattedConfidence = String.format("%.2f", bestConfidence * 100)
+
+                Text(
+                    text = "Diagnosis: $className",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colorResource(id = R.color.darkPrimary)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Confidence: $formattedConfidence%",
+                    fontSize = 16.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
 }
 
 fun cropBitmap(bitmap: Bitmap, rect: RectF): Bitmap {
@@ -349,6 +413,42 @@ fun saveCroppedBitmap(context: Context, bitmap: Bitmap, filename: String) {
         context.contentResolver.openOutputStream(uri)?.use { outputStream ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
         }
+    }
+}
+
+suspend fun processAndClassifyEyes(
+    context: Context,
+    bitmap: Bitmap?,
+    leftEyeBox: RectF?,
+    rightEyeBox: RectF?,
+    imageClassifierHelper: ImageClassifierHelper?,
+    onClassificationResult: (List<Float>, Float, Int) -> Unit
+) {
+    if (bitmap != null && leftEyeBox != null && rightEyeBox != null && imageClassifierHelper != null) {
+        val croppedLeftEyeBitmap = cropBitmap(bitmap, leftEyeBox)
+        val croppedRightEyeBitmap = cropBitmap(bitmap, rightEyeBox)
+
+        val leftEyeResults = imageClassifierHelper.classifyImage(croppedLeftEyeBitmap)
+        val rightEyeResults = imageClassifierHelper.classifyImage(croppedRightEyeBitmap)
+
+        val combinedResults = leftEyeResults.zip(rightEyeResults).map { (left, right) -> (left + right) / 2 }
+        val bestClassIndex = combinedResults.indexOf(combinedResults.maxOrNull() ?: 0f)
+        val bestConfidence = combinedResults.maxOrNull() ?: 0f
+
+        onClassificationResult(combinedResults, bestConfidence, bestClassIndex)
+    }
+}
+
+fun getResultMessage(resultIndex: Int, confidence: Float): String {
+    val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+    val className = classLabels.getOrNull(resultIndex) ?: "Unknown"
+    val formattedConfidence = String.format("%.2f", confidence * 100)
+
+    return when (className) {
+        "Normal" -> "Normal"
+        "Cataract" -> "Cataract"
+        "Glaucoma" -> "Glaucoma"
+        else -> className
     }
 }
 
