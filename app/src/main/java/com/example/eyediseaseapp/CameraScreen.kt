@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.RectF
 import android.media.ExifInterface
 import android.net.Uri
@@ -15,10 +16,13 @@ import android.renderscript.Element
 import android.renderscript.RenderScript
 import android.renderscript.ScriptIntrinsicBlur
 import android.util.Log
+import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
@@ -31,6 +35,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -79,12 +84,19 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.LineBreak.Companion.Paragraph
+import androidx.compose.ui.zIndex
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 import com.itextpdf.io.image.ImageDataFactory
 import com.itextpdf.io.source.ByteArrayOutputStream
 import com.itextpdf.kernel.pdf.PdfDocument
@@ -143,7 +155,7 @@ fun CameraView() {
 
     var preview by remember { mutableStateOf<Preview?>(null) }
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    var imageCapture: ImageCapture? = null
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -154,11 +166,21 @@ fun CameraView() {
     var isLoading by remember { mutableStateOf(false) }
 
     var showDetailsCard by remember { mutableStateOf(false) }
+    var initState by remember { mutableStateOf(true) }
     var blurredBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     var showRecaptureButton by remember { mutableStateOf(false) }
 
     val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+
+    var faceBoundingBoxes by remember { mutableStateOf<List<RectF>>(emptyList()) } // State to hold bounding boxes
+    val imageAspectRatio = 4f / 3f // Default aspect ratio, adjust if needed
+
+    val mediaPipeFaceMesh = remember { MediaPipeFaceMesh(context) }
+
+    var lastBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var lastLeftEyeBox by remember { mutableStateOf<RectF?>(null) }
+    var lastRightEyeBox by remember { mutableStateOf<RectF?>(null) }
 
     val imageClassifierHelper = remember {
         try {
@@ -172,16 +194,52 @@ fun CameraView() {
             null
         }
     }
+    val localContext = LocalContext.current // Use a different name for the context variable
+    val overlayView = remember {
+        OverlayView(localContext, null).apply { // Use the new variable name
+            layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+    }
 
+    mediaPipeFaceMesh.listener = object : MediaPipeFaceMesh.FaceMeshListener {
+        override fun onFaceMeshResult(
+            bitmap: Bitmap,
+            leftEyeBox: RectF?,
+            rightEyeBox: RectF?,
+            faceLandmarkerResult: FaceLandmarkerResult
+        ) {
+            lastBitmap = bitmap
+            lastLeftEyeBox = leftEyeBox
+            lastRightEyeBox = rightEyeBox
+
+            if (faceLandmarkerResult.faceLandmarks().isNotEmpty()) {
+                // Face detected, update results with a dummy value (e.g., 1.0f)
+                results = listOf(1.0f) // Use a dummy float value to indicate face detected
+            } else {
+                // No face detected, clear results
+                results = emptyList()
+            }
+
+            faceBoundingBoxes = listOfNotNull(leftEyeBox, rightEyeBox)
+            overlayView.setResults(
+                faceLandmarkerResult,
+                bitmap.height,
+                bitmap.width,
+                RunningMode.LIVE_STREAM
+            )
+        }
+    }
 
     val takePicture = {
+        Log.d("CameraView", "imageCapture: $imageCapture")
         if (imageCapture != null) {
             imageCapture?.takePicture(
                 ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageCapturedCallback() {
                     override fun onCaptureSuccess(image: ImageProxy) {
                         val bitmap = image.toBitmap() // Convert ImageProxy to Bitmap
-                        val rotatedBitmap = rotateBitmap(context, bitmap) // Rotate the bitmap if needed
+                        val rotatedBitmap =
+                            rotateBitmap(context, bitmap) // Rotate the bitmap if needed
                         image.close() // Close the ImageProxy
 
                         isLoading = true
@@ -192,17 +250,21 @@ fun CameraView() {
                         coroutineScope.launch {
                             try {
                                 capturedImageBitmap = rotatedBitmap
-
+                                Log.d("result", "Resukls: $results")
                                 delay(5000) // Simulate processing delay
 
                                 if (imageClassifierHelper != null) {
-                                    val classificationResults = imageClassifierHelper.classifyImage(rotatedBitmap)
+                                    val classificationResults =
+                                        imageClassifierHelper.classifyImage(rotatedBitmap)
                                     results = classificationResults
-                                    bestClassIndex = classificationResults.indexOf(classificationResults.maxOrNull() ?: 0f)
+                                    bestClassIndex = classificationResults.indexOf(
+                                        classificationResults.maxOrNull() ?: 0f
+                                    )
                                     bestConfidence = classificationResults.maxOrNull() ?: 0f
                                 } else {
                                     Log.e("CameraView", "ImageClassifierHelper is null")
                                 }
+
                             } catch (e: Exception) {
                                 Log.e("CameraView", "Error processing image: ${e.message}", e)
                             } finally {
@@ -212,7 +274,11 @@ fun CameraView() {
                     }
 
                     override fun onError(exception: ImageCaptureException) {
-                        Log.e("CameraView", "Error capturing image: ${exception.message}", exception)
+                        Log.e(
+                            "CameraView",
+                            "Error capturing image: ${exception.message}",
+                            exception
+                        )
                     }
                 }
             )
@@ -288,24 +354,49 @@ fun CameraView() {
                             .background(colorResource(id = R.color.white))
                             .aspectRatio(aspectRatio)
                     ) {
-                        if (capturedImageBitmap == null) {
+                        if (initState) {
                             AndroidView(
                                 factory = { ctx ->
                                     val previewView = PreviewView(ctx)
+                                    val imageAnalysis = ImageAnalysis.Builder()
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+
                                     cameraProviderFuture.addListener({
                                         val cameraProvider = cameraProviderFuture.get()
                                         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                                         imageCapture = ImageCapture.Builder().build()
+
                                         preview = Preview.Builder().build().also {
                                             it.setSurfaceProvider(previewView.surfaceProvider)
                                         }
+
+                                        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                            Log.d("CameraView", "ImageAnalysis.Analyzer called")
+                                            val bitmap = imageProxy.toBitmap()
+                                            Log.d(
+                                                "CameraView",
+                                                "Calling mediaPipeFaceMesh.detect()"
+                                            )
+                                            mediaPipeFaceMesh.detect(
+                                                bitmap,
+                                                System.currentTimeMillis()
+                                            )
+                                            imageProxy.close()
+                                        }
+
                                         try {
                                             cameraProvider.unbindAll()
                                             cameraProvider.bindToLifecycle(
                                                 lifecycleOwner,
                                                 cameraSelector,
                                                 preview,
-                                                imageCapture
+                                                imageCapture!!,
+                                                imageAnalysis
+                                            )
+                                            Log.d(
+                                                "CameraView",
+                                                "captureImage1st: $imageCapture"
                                             )
                                         } catch (e: Exception) {
                                             Log.e(
@@ -315,11 +406,19 @@ fun CameraView() {
                                             )
                                         }
                                     }, ContextCompat.getMainExecutor(ctx))
+
                                     previewView
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
-                        } else {
+
+                            AndroidView(
+                                { overlayView },
+                                modifier = Modifier.fillMaxSize()
+                            ) // Add OverlayView
+
+                        }
+                        if (capturedImageBitmap != null){
                             Column(modifier = Modifier.fillMaxSize()) {
                                 AnimatedVisibility(visible = !isLoading) {
                                     capturedImageBitmap?.let { bitmap ->
@@ -342,24 +441,44 @@ fun CameraView() {
                             }
                         }
                     }
-                    if (capturedImageBitmap == null) {
-                        IconButton(
-                            onClick = { takePicture() },
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .padding(top = 5.dp)
-                                .size(80.dp)
-                                .border(4.dp, Color.White, CircleShape)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.baseline_camera_alt_24),
-                                contentDescription = "Take picture",
-                                modifier = Modifier.fillMaxSize(),
-                                tint = Color.White
+                    if (initState) {
+                        if (results.isEmpty()) { // Check if no face is detected
+                            Text(
+                                text = "No Eye Detected",
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(top = 5.dp),
+                                color = Color.Red,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
                             )
+                        } else { // Face detected, show capture button
+                            IconButton(
+
+                                onClick = {
+                                    Log.d("CameraView", "IconButton clicked")
+                                    Log.d("CameraView", "captureImage: $imageCapture")
+                                    takePicture()
+                                    initState = false
+                                          },
+                                modifier = Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(top = 5.dp)
+                                    .size(80.dp)
+                                    .zIndex(1f)
+                                    .border(4.dp, Color.White, CircleShape)
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.baseline_camera_alt_24),
+                                    contentDescription = "Take picture",
+                                    modifier = Modifier.fillMaxSize(),
+                                    tint = Color.White
+                                )
+                            }
                         }
-                    } else {
-                        if (results.isNotEmpty()) {
+                    }
+                    if (capturedImageBitmap != null) {
+                        if(!isLoading) {
                             Button(
                                 modifier = Modifier.padding(5.dp)
                                     .align(Alignment.CenterHorizontally),
@@ -370,6 +489,7 @@ fun CameraView() {
                                 onClick = {
                                     // Reset state variables
                                     capturedImageBitmap = null
+                                    initState = true
                                     results = emptyList()
                                     bestClassIndex = -1
                                     bestConfidence = 0f
@@ -438,13 +558,137 @@ fun CameraView() {
                             }
                         }
                     }
+
+//                    if (capturedImageBitmap == null) {
+//                        if (results.isEmpty()) { // Check if no face is detected
+//                            Text(
+//                                text = "No Eye Detected",
+//                                modifier = Modifier
+//                                    .align(Alignment.CenterHorizontally)
+//                                    .padding(top = 5.dp),
+//                                color = Color.Red,
+//                                fontSize = 18.sp,
+//                                fontWeight = FontWeight.Bold
+//                            )
+//                        } else { // Face detected, show capture button
+//                            IconButton(
+//
+//                                onClick = {
+//                                    Log.d("CameraView", "IconButton clicked")
+//                                    Log.d("CameraView", "captureImage: $imageCapture")
+//                                    takePicture()
+//                                    initState = false
+//                                          },
+//                                modifier = Modifier
+//                                    .align(Alignment.CenterHorizontally)
+//                                    .padding(top = 5.dp)
+//                                    .size(80.dp)
+//                                    .zIndex(1f)
+//                                    .border(4.dp, Color.White, CircleShape)
+//                            ) {
+//                                Icon(
+//                                    painter = painterResource(id = R.drawable.baseline_camera_alt_24),
+//                                    contentDescription = "Take picture",
+//                                    modifier = Modifier.fillMaxSize(),
+//                                    tint = Color.White
+//                                )
+//                            }
+//                        }
+//                    } else {
+//                        if (results.isNotEmpty()) {
+//                            Button(
+//                                modifier = Modifier.padding(5.dp)
+//                                    .align(Alignment.CenterHorizontally),
+//                                colors = ButtonDefaults.buttonColors(
+//                                    containerColor = colorResource(id = R.color.darkPrimary)
+//                                ),
+//                                shape = RoundedCornerShape(10.dp),
+//                                onClick = {
+//                                    // Reset state variables
+//                                    capturedImageBitmap = null
+//                                    results = emptyList()
+//                                    bestClassIndex = -1
+//                                    bestConfidence = 0f
+//                                },
+//                            ) {
+//                                Text(
+//                                    text = "Capture again",
+//                                    color = Color.White,
+//                                    fontSize = 16.sp,
+//                                    textAlign = TextAlign.Center,
+//                                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+//                                )
+//                            }
+//                            Card(
+//                                modifier = Modifier
+//                                    .fillMaxWidth()
+//                                    .padding(vertical = 16.dp),
+//                                colors = CardDefaults.cardColors(
+//                                    containerColor = Color.White
+//                                ),
+//                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+//                            ) {
+//                                Column(
+//                                    modifier = Modifier.padding(16.dp),
+//                                    horizontalAlignment = Alignment.CenterHorizontally
+//                                ) {
+//                                    val className =
+//                                        classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+//                                    val formattedConfidence =
+//                                        String.format("%.2f", bestConfidence * 100)
+//
+//                                    Text(
+//                                        text = "Diagnosis: $className",
+//                                        fontSize = 20.sp,
+//                                        fontWeight = FontWeight.Bold,
+//                                        color = colorResource(id = R.color.darkPrimary)
+//                                    )
+//                                    Spacer(modifier = Modifier.height(8.dp))
+//                                    Text(
+//                                        text = "Confidence: $formattedConfidence%",
+//                                        fontSize = 16.sp,
+//                                        color = Color.Gray
+//                                    )
+//                                    Spacer(modifier = Modifier.height(8.dp))
+//                                    Button(
+//                                        modifier = Modifier.padding(5.dp)
+//                                            .align(Alignment.CenterHorizontally),
+//                                        colors = ButtonDefaults.buttonColors(
+//                                            containerColor = colorResource(id = R.color.darkPrimary)
+//                                        ),
+//                                        shape = RoundedCornerShape(10.dp),
+//                                        onClick = {
+//                                            showDetailsCard = true
+//                                            captureAndBlurScreenshot(context) { blurredBitmap = it }
+//                                        },
+//                                    ) {
+//                                        Text(
+//                                            text = "Show more details",
+//                                            color = Color.White,
+//                                            fontSize = 16.sp,
+//                                            textAlign = TextAlign.Center,
+//                                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+//                                        )
+//                                    }
+//                                }
+//                            }
+//                        }
+//                    }
                 }
             }
         }
         AnimatedVisibility(
             visible = showDetailsCard,
-            enter = fadeIn(animationSpec = tween(durationMillis = 500)) + scaleIn(animationSpec = tween(durationMillis = 500)),
-            exit = fadeOut(animationSpec = tween(durationMillis = 500)) + scaleOut(animationSpec = tween(durationMillis = 500))
+            enter = fadeIn(animationSpec = tween(durationMillis = 500)) + scaleIn(
+                animationSpec = tween(
+                    durationMillis = 500
+                )
+            ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 500)) + scaleOut(
+                animationSpec = tween(
+                    durationMillis = 500
+                )
+            )
         ) {
             Card(
                 modifier = Modifier
@@ -454,7 +698,9 @@ fun CameraView() {
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -474,7 +720,7 @@ fun CameraView() {
                         color = Color.Gray
                     )
 
-                    if(className == "Cataract" || className == "Glaucoma"){
+                    if (className == "Cataract" || className == "Glaucoma") {
                         Text(
                             text = "For further evaluation, consult an ophthalmologist. Here are suggested clinics:",
                             color = colorResource(id = R.color.darkPrimary),
@@ -555,13 +801,13 @@ fun CameraView() {
                             color = colorResource(id = R.color.darkPrimary),
                             fontSize = 16.sp,
                         )
-                    }else if(className == "Normal"){
+                    } else if (className == "Normal") {
                         Text(
                             text = "If you are experiencing any eye discomfort, vision changes, or have any concerns about your eye health, it is always recommended to consult with a qualified ophthalmologist for a comprehensive eye examination.",
                             color = colorResource(id = R.color.darkPrimary),
                             fontSize = 14.sp,
                         )
-                    }else{
+                    } else {
                         Text(
                             text = "The uploaded image could not be clearly classified. This may be due to image quality, variations in eye appearance, or limitations in the analysis model. It is essential to consult an ophthalmologist for a thorough eye examination and diagnosis.",
                             color = colorResource(id = R.color.darkPrimary),
@@ -572,7 +818,14 @@ fun CameraView() {
                     Spacer(modifier = Modifier.height(32.dp))
 
                     Button(
-                        onClick = { generatePdf(context, capturedImageBitmap, classLabels.getOrNull(bestClassIndex) ?: "Unknown", bestConfidence) },
+                        onClick = {
+                            generatePdf(
+                                context,
+                                capturedImageBitmap,
+                                classLabels.getOrNull(bestClassIndex) ?: "Unknown",
+                                bestConfidence
+                            )
+                        },
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
                         Text("Download PDF")
@@ -607,7 +860,10 @@ fun captureAndBlurScreenshot(context: Context, onBitmapReady: (Bitmap?) -> Unit)
 
 fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confidence: Float) {
     val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
-    val filePath = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
+    val filePath = File(
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+        fileName
+    )
 
     try {
         val writer = PdfWriter(FileOutputStream(filePath))
@@ -638,32 +894,6 @@ fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confi
     }
 }
 
-// Example RenderScript blur (requires RenderScript dependency)
-fun blurBitmap(context: Context, bitmap: Bitmap, radius: Float): Bitmap {
-    val rs = RenderScript.create(context)
-    val input = Allocation.createFromBitmap(rs, bitmap)
-    val output = Allocation.createTyped(rs, input.type)
-    val blur = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
-
-    blur.setInput(input)
-    blur.setRadius(radius)
-    blur.forEach(output)
-
-    output.copyTo(bitmap)
-
-    rs.destroy()
-    return bitmap
-}
-
-
-// Placeholder function - replace with your actual logic
-fun extractBoundingBoxesFromBitmap(bitmap: Bitmap): List<RectF> {
-    // This function should extract the bounding box coordinates
-    // from the bitmap or recalculate them based on the landmarks.
-    // For demonstration, returning an empty list.
-    return emptyList()
-
-}
 
 @androidx.compose.ui.tooling.preview.Preview(showBackground = true)
 @Composable

@@ -41,6 +41,7 @@ class MediaPipeFaceMesh(private val context: Context) {
     }
 
     private fun setupFaceLandmarker() {
+        Log.d(TAG, "Setting up MediaPipe Face Landmarker...")
         try {
             val baseOptionsBuilder = BaseOptions.builder()
                 .setModelAssetPath("face_landmarker.task")
@@ -52,13 +53,14 @@ class MediaPipeFaceMesh(private val context: Context) {
                 .setResultListener(this::returnLivestreamResult)
                 .setErrorListener(this::returnLivestreamError)
             faceLandmarker = FaceLandmarker.createFromOptions(context, optionsBuilder.build())
+            Log.d(TAG, "MediaPipe Face Landmarker initialized successfully.")
         } catch (e: IllegalStateException) {
             Log.e(TAG, "MediaPipe failed to load a model asset: $e")
         }
     }
 
     private fun calculateBoundingBox(landmarks: List<NormalizedLandmark>, landmarkIndices: List<Int>, canvasWidth: Int, canvasHeight: Int): RectF? {
-        Log.d(TAG, "calculateBoundingBox input landmarkIndices: $landmarkIndices") // Log input indices
+        Log.d(TAG, "calculateBoundingBox input landmarkIndices: $landmarkIndices")
 
         // Log landmark coordinates
         for (index in landmarkIndices) {
@@ -85,8 +87,8 @@ class MediaPipeFaceMesh(private val context: Context) {
             }
         }
 
-        // Calculate a small padding around the iris
-        val padding = 10f // Adjust as needed
+        // Adjust the padding to make the bounding box larger
+        val padding = 50f // Increase the padding
         val rect = RectF(minX - padding, minY - padding, maxX + padding, maxY + padding)
         Log.d(TAG, "Calculated RectF: $rect")
         return rect
@@ -107,67 +109,15 @@ class MediaPipeFaceMesh(private val context: Context) {
         if (result.faceLandmarks().isNotEmpty()) {
             val landmarks = result.faceLandmarks()[0]
 
-            // Draw iris landmarks (existing code)
-            paint.color = Color.GREEN
-            for (index in LEFT_IRIS_LANDMARKS) {
-                if (index < landmarks.size) {
-                    val landmark = landmarks[index]
-                    val x = landmark.x() * canvas.width
-                    val y = landmark.y() * canvas.height
-                    canvas.drawCircle(x, y, 10f, paint)
-                }
-            }
-            for (index in RIGHT_IRIS_LANDMARKS) {
-                if (index < landmarks.size) {
-                    val landmark = landmarks[index]
-                    val x = landmark.x() * canvas.width
-                    val y = landmark.y() * canvas.height
-                    canvas.drawCircle(x, y, 10f, paint)
-                }
-            }
-
-            // Calculate bounding boxes around IRIS
+            // Calculate bounding boxes around EYES
             paint.color = Color.BLUE
-            leftEyeBox = calculateBoundingBox(landmarks, LEFT_IRIS_LANDMARKS, canvas.width, canvas.height)
-            leftEyeBox?.let { canvas.drawRect(it, paint) } // Draw bounding box on original bitmap
-            rightEyeBox = calculateBoundingBox(landmarks, RIGHT_IRIS_LANDMARKS, canvas.width, canvas.height)
-            rightEyeBox?.let { canvas.drawRect(it, paint) } // Draw bounding box on original bitmap
+            leftEyeBox = calculateBoundingBox(landmarks, LEFT_EYE_LANDMARKS, canvas.width, canvas.height)
+            rightEyeBox = calculateBoundingBox(landmarks, RIGHT_EYE_LANDMARKS, canvas.width, canvas.height)
 
-            // Crop the bitmap using the leftEyeBox
-            leftEyeBox?.let {
-                val croppedLeftBitmap = Bitmap.createBitmap(
-                    originalBitmap,
-                    it.left.toInt(),
-                    it.top.toInt(),
-                    it.width().toInt(),
-                    it.height().toInt()
-                )
-
-                // Scale the cropped bitmap to a larger size
-                val scaledBitmap = Bitmap.createScaledBitmap(croppedLeftBitmap, 400, 400, false) // Adjust size as needed
-
-                listener?.onFaceMeshResult(scaledBitmap, it, rightEyeBox)
-                return
-            }
-
-            // Crop the bitmap using the rightEyeBox (optional)
-            rightEyeBox?.let {
-                val croppedRightBitmap = Bitmap.createBitmap(
-                    originalBitmap,
-                    it.left.toInt(),
-                    it.top.toInt(),
-                    it.width().toInt(),
-                    it.height().toInt()
-                )
-                // Replace the original bitmap with the cropped right eye bitmap
-                listener?.onFaceMeshResult(croppedRightBitmap, leftEyeBox, rightEyeBox) // Send cropped bitmap and bounding box
-                return // Exit to avoid sending the full bitmap again
-            }
-
-            // Send the original bitmap (if no cropping was done)
-            listener?.onFaceMeshResult(originalBitmap, leftEyeBox, rightEyeBox)
+            // Send the original bitmap and bounding boxes
+            listener?.onFaceMeshResult(originalBitmap, leftEyeBox, rightEyeBox, result)
         } else {
-            listener?.onFaceMeshResult(originalBitmap, leftEyeBox, rightEyeBox)
+            listener?.onFaceMeshResult(originalBitmap, leftEyeBox, rightEyeBox, result)
         }
     }
 
@@ -176,6 +126,7 @@ class MediaPipeFaceMesh(private val context: Context) {
     }
 
     fun detect(bitmap: Bitmap, time: Long) {
+        Log.d(TAG, "Detecting face landmarks...")
         if (faceLandmarker == null) {
             Log.e(TAG, "Face landmarker has not been initialized yet.")
             return
@@ -185,6 +136,6 @@ class MediaPipeFaceMesh(private val context: Context) {
     }
 
     interface FaceMeshListener {
-        fun onFaceMeshResult(bitmap: Bitmap, leftEyeBox: RectF?, rightEyeBox: RectF?)
+        fun onFaceMeshResult(bitmap: Bitmap, leftEyeBox: RectF?, rightEyeBox: RectF?, faceLandmarkerResult: FaceLandmarkerResult)
     }
 }
