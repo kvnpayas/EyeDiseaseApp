@@ -67,6 +67,9 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.11.0")
     implementation("androidx.activity:activity-compose:1.10.0")
 
+    implementation ("com.itextpdf.android:kernel-android:7.2.5")
+    implementation("com.itextpdf.android:layout-android:7.2.5")
+
 
     implementation (libs.tasks.vision)
 }

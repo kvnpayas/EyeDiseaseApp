@@ -1,28 +1,40 @@
 package com.example.eyediseaseapp
 
 import android.Manifest
-import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Rect
+import android.graphics.Matrix
 import android.graphics.RectF
+import android.media.ExifInterface
 import android.net.Uri
+import android.os.Environment
 import android.provider.MediaStore
+import android.renderscript.Allocation
+import android.renderscript.Element
+import android.renderscript.RenderScript
+import android.renderscript.ScriptIntrinsicBlur
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +45,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -59,32 +74,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import java.text.SimpleDateFormat
-import java.util.Locale
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import androidx.compose.foundation.Canvas
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.LineBreak.Companion.Paragraph
+import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.itextpdf.io.image.ImageDataFactory
+import com.itextpdf.io.source.ByteArrayOutputStream
+import com.itextpdf.kernel.pdf.PdfDocument
+import com.itextpdf.kernel.pdf.PdfName.Document
+import com.itextpdf.kernel.pdf.PdfWriter
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.max
-import kotlin.math.min
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import com.itextpdf.layout.Document
+import com.itextpdf.layout.element.Image
+import com.itextpdf.layout.element.Paragraph
 
-fun ImageProxy.toBitmap(): Bitmap {
-    val buffer = planes[0].buffer
-    buffer.rewind()
-    val bytes = ByteArray(buffer.capacity())
-    buffer.get(bytes)
-    return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-}
 
 @Composable
 fun CameraScreen() {
+
     val context = LocalContext.current
     // State to track if the camera permission is granted
     var hasCamPermission by remember { mutableStateOf(false) }
@@ -127,21 +145,18 @@ fun CameraView() {
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     var imageCapture: ImageCapture? = null
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
+    val coroutineScope = rememberCoroutineScope()
 
-    var faceBoundingBoxes by remember { mutableStateOf<List<RectF>>(emptyList()) } // State to hold bounding boxes
-    val imageAspectRatio = 4f / 3f // Default aspect ratio, adjust if needed
-
-    val mediaPipeFaceMesh = remember { MediaPipeFaceMesh(context) }
-    val coroutineScope = rememberCoroutineScope() // For launching coroutines
-
-    var lastBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var lastLeftEyeBox by remember { mutableStateOf<RectF?>(null) }
-    var lastRightEyeBox by remember { mutableStateOf<RectF?>(null) }
-
+    var capturedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var results by remember { mutableStateOf<List<Float>>(emptyList()) }
     var bestConfidence by remember { mutableStateOf(0f) }
     var bestClassIndex by remember { mutableStateOf(-1) }
     var isLoading by remember { mutableStateOf(false) }
+
+    var showDetailsCard by remember { mutableStateOf(false) }
+    var blurredBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    var showRecaptureButton by remember { mutableStateOf(false) }
 
     val classLabels = listOf("Normal", "Cataract", "Glaucoma")
 
@@ -158,299 +173,488 @@ fun CameraView() {
         }
     }
 
-    mediaPipeFaceMesh.listener = object : MediaPipeFaceMesh.FaceMeshListener {
-        override fun onFaceMeshResult(bitmap: Bitmap, leftEyeBox: RectF?, rightEyeBox: RectF?) {
-            lastBitmap = bitmap
-            lastLeftEyeBox = leftEyeBox
-            lastRightEyeBox = rightEyeBox
-        }
-    }
-
 
     val takePicture = {
-        val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
-            .format(System.currentTimeMillis())
-        val contentValues = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+        if (imageCapture != null) {
+            imageCapture?.takePicture(
+                ContextCompat.getMainExecutor(context),
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        val bitmap = image.toBitmap() // Convert ImageProxy to Bitmap
+                        val rotatedBitmap = rotateBitmap(context, bitmap) // Rotate the bitmap if needed
+                        image.close() // Close the ImageProxy
+
+                        isLoading = true
+                        bestClassIndex = -1
+                        bestConfidence = 0f
+                        results = emptyList()
+
+                        coroutineScope.launch {
+                            try {
+                                capturedImageBitmap = rotatedBitmap
+
+                                delay(5000) // Simulate processing delay
+
+                                if (imageClassifierHelper != null) {
+                                    val classificationResults = imageClassifierHelper.classifyImage(rotatedBitmap)
+                                    results = classificationResults
+                                    bestClassIndex = classificationResults.indexOf(classificationResults.maxOrNull() ?: 0f)
+                                    bestConfidence = classificationResults.maxOrNull() ?: 0f
+                                } else {
+                                    Log.e("CameraView", "ImageClassifierHelper is null")
+                                }
+                            } catch (e: Exception) {
+                                Log.e("CameraView", "Error processing image: ${e.message}", e)
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        Log.e("CameraView", "Error capturing image: ${exception.message}", exception)
+                    }
+                }
+            )
+        } else {
+            Log.e("CameraView", "imageCapture is null, cannot take picture.")
         }
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(
-            context.contentResolver,
-            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        ).build()
-
-        imageCapture?.takePicture(
-            outputOptions,
-            cameraExecutor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    val savedUri: Uri? = outputFileResults.savedUri
-                    Log.d("CameraView", "Original image saved to: $savedUri")
-
-                    // Use the stored bitmap and eye boxes
-                    if (lastBitmap != null && lastLeftEyeBox != null) {
-                        // Crop to the left eye
-                        val croppedLeftEyeBitmap = cropBitmap(lastBitmap!!, lastLeftEyeBox!!)
-                        saveCroppedBitmap(context, croppedLeftEyeBitmap, "left_eye_$name")
-                    }
-
-                    if (lastBitmap != null && lastRightEyeBox != null) {
-                        // Crop to the right eye
-                        val croppedRightEyeBitmap = cropBitmap(lastBitmap!!, lastRightEyeBox!!)
-                        saveCroppedBitmap(context, croppedRightEyeBitmap, "right_eye_$name")
-                    }
-
-                    coroutineScope.launch {
-                        processAndClassifyEyes(context, lastBitmap, lastLeftEyeBox, lastRightEyeBox, imageClassifierHelper, { result, confidence, index ->
-                            results = result
-                            bestConfidence = confidence
-                            bestClassIndex = index
-                        })
-                    }
-
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    Log.e("CameraView", "Error saving image: ${exception.message}", exception)
-                }
-            }
-        )
     }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colorResource(id = R.color.lightPrimary))
-            .padding(bottom = 100.dp, top = 80.dp, start = 50.dp, end = 50.dp)
-    ) {
-        Column {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "CATARACT AND GLAUCOMA",
-                        color = colorResource(id = R.color.darkPrimary),
-                        fontSize = 20.sp,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(32.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Preliminary Diagnosis",
-                        color = colorResource(id = R.color.darkPrimary),
-                        fontSize = 20.sp,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(32.dp))
+    Box(modifier = Modifier.fillMaxSize()) { // Use Box to overlay content
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(imageAspectRatio) // Match camera preview aspect ratio
+                    .fillMaxSize()
+                    .background(colorResource(id = R.color.lightPrimary))
+                    .padding(bottom = 100.dp, top = 80.dp, start = 50.dp, end = 50.dp)
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        val previewView = PreviewView(ctx)
-                        val imageAnalysis = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-                            .also {
-                                it.setAnalyzer(cameraExecutor) { imageProxy ->
-                                    val bitmap = imageProxy.toBitmap()
-                                    mediaPipeFaceMesh.detect(bitmap, System.currentTimeMillis())
-                                    imageProxy.close()
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "CATARACT AND GLAUCOMA",
+                                color = colorResource(id = R.color.darkPrimary),
+                                fontSize = 20.sp,
+                                textAlign = TextAlign.Center,
+                                style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.White
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 20.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Preliminary Diagnosis",
+                                color = colorResource(id = R.color.darkPrimary),
+                                fontSize = 20.sp,
+                                textAlign = TextAlign.Center,
+                                style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                            )
+                        }
+                    }
+                    val aspectRatio = 1f
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(colorResource(id = R.color.white))
+                            .aspectRatio(aspectRatio)
+                    ) {
+                        if (capturedImageBitmap == null) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    val previewView = PreviewView(ctx)
+                                    cameraProviderFuture.addListener({
+                                        val cameraProvider = cameraProviderFuture.get()
+                                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                                        imageCapture = ImageCapture.Builder().build()
+                                        preview = Preview.Builder().build().also {
+                                            it.setSurfaceProvider(previewView.surfaceProvider)
+                                        }
+                                        try {
+                                            cameraProvider.unbindAll()
+                                            cameraProvider.bindToLifecycle(
+                                                lifecycleOwner,
+                                                cameraSelector,
+                                                preview,
+                                                imageCapture
+                                            )
+                                        } catch (e: Exception) {
+                                            Log.e(
+                                                "CameraView",
+                                                "Error starting camera: ${e.message}",
+                                                e
+                                            )
+                                        }
+                                    }, ContextCompat.getMainExecutor(ctx))
+                                    previewView
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                AnimatedVisibility(visible = !isLoading) {
+                                    capturedImageBitmap?.let { bitmap ->
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "Captured Image",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                                if (isLoading) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize() // Assuming you want to fill the parent
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.align(Alignment.Center)
+                                        )
+                                    }
                                 }
                             }
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val cameraSelector = CameraSelector.Builder()
-                                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                                .build()
-                            imageCapture = ImageCapture.Builder().build()
-                            preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-                            try {
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imageCapture,
-                                    imageAnalysis
-                                )
-                            } catch (e: Exception) {
-                                Log.e("CameraView", "Error starting camera: ${e.message}", e)
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-                        previewView
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Canvas to draw bounding boxes
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val paint = Paint().apply {
-                        color = Color.Green
-                        style = PaintingStyle.Stroke
-                        strokeWidth = 4f
+                        }
                     }
-                    faceBoundingBoxes.forEach { rect ->
-                        drawRect(
-                            color = paint.color, // Use the color from your Paint object
-                            topLeft = Offset(rect.left, rect.top),
-                            size = Size(rect.width(), rect.height()),
-                            style = Stroke(width = paint.strokeWidth) // Use the stroke width from your Paint object
-                        )
+                    if (capturedImageBitmap == null) {
+                        IconButton(
+                            onClick = { takePicture() },
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(top = 5.dp)
+                                .size(80.dp)
+                                .border(4.dp, Color.White, CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.baseline_camera_alt_24),
+                                contentDescription = "Take picture",
+                                modifier = Modifier.fillMaxSize(),
+                                tint = Color.White
+                            )
+                        }
+                    } else {
+                        if (results.isNotEmpty()) {
+                            Button(
+                                modifier = Modifier.padding(5.dp)
+                                    .align(Alignment.CenterHorizontally),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = colorResource(id = R.color.darkPrimary)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                onClick = {
+                                    // Reset state variables
+                                    capturedImageBitmap = null
+                                    results = emptyList()
+                                    bestClassIndex = -1
+                                    bestConfidence = 0f
+                                },
+                            ) {
+                                Text(
+                                    text = "Capture again",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                                )
+                            }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color.White
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    val className =
+                                        classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+                                    val formattedConfidence =
+                                        String.format("%.2f", bestConfidence * 100)
+
+                                    Text(
+                                        text = "Diagnosis: $className",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colorResource(id = R.color.darkPrimary)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Confidence: $formattedConfidence%",
+                                        fontSize = 16.sp,
+                                        color = Color.Gray
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        modifier = Modifier.padding(5.dp)
+                                            .align(Alignment.CenterHorizontally),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colorResource(id = R.color.darkPrimary)
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        onClick = {
+                                            showDetailsCard = true
+                                            captureAndBlurScreenshot(context) { blurredBitmap = it }
+                                        },
+                                    ) {
+                                        Text(
+                                            text = "Show more details",
+                                            color = Color.White,
+                                            fontSize = 16.sp,
+                                            textAlign = TextAlign.Center,
+                                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-
-        // Capture button
-        IconButton(
-            onClick = { takePicture() },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp)
-                .size(80.dp)
-                .border(4.dp, Color.White, CircleShape)
+        AnimatedVisibility(
+            visible = showDetailsCard,
+            enter = fadeIn(animationSpec = tween(durationMillis = 500)) + scaleIn(animationSpec = tween(durationMillis = 500)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 500)) + scaleOut(animationSpec = tween(durationMillis = 500))
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.baseline_camera_alt_24),
-                contentDescription = "Take picture",
-                modifier = Modifier.fillMaxSize(),
-                tint = Color.White
-            )
-        }
-    }
-
-    if (results.isNotEmpty()) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),  // Add padding to make it "almost" full screen
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
-                val className = classLabels.getOrNull(bestClassIndex) ?: "Unknown"
-                val formattedConfidence = String.format("%.2f", bestConfidence * 100)
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    val className = classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+                    val formattedConfidence = String.format("%.2f", bestConfidence * 100)
 
-                Text(
-                    text = "Diagnosis: $className",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colorResource(id = R.color.darkPrimary)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Confidence: $formattedConfidence%",
-                    fontSize = 16.sp,
-                    color = Color.Gray
-                )
+                    Text(
+                        text = "Preliminary Diagnosis: $className",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black // Or any color you prefer
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Confidence: $formattedConfidence%",
+                        fontSize = 18.sp,
+                        color = Color.Gray
+                    )
+
+                    if(className == "Cataract" || className == "Glaucoma"){
+                        Text(
+                            text = "For further evaluation, consult an ophthalmologist. Here are suggested clinics:",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 14.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(6.dp))
+                        Text(
+                            text = "Gueco Optical",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "Rizal St, Poblacion, Gerona, 2302",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "Tarlac",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "(045) 925 0303",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(6.dp))
+                        Text(
+                            text = "Chu Eye Center, ENT & Optical Clinic",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "M.H Del Pilar St, Paniqui, 2307",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "Tarlac",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "(045) 470 08260",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(6.dp))
+                        Text(
+                            text = "Uycoco Optical Clinic",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "127 Burgos St., Paniqui, 2307",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "Tarlac",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                        Spacer(modifier = Modifier.padding(2.dp))
+                        Text(
+                            text = "0933 856 1668",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 16.sp,
+                        )
+                    }else if(className == "Normal"){
+                        Text(
+                            text = "If you are experiencing any eye discomfort, vision changes, or have any concerns about your eye health, it is always recommended to consult with a qualified ophthalmologist for a comprehensive eye examination.",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 14.sp,
+                        )
+                    }else{
+                        Text(
+                            text = "The uploaded image could not be clearly classified. This may be due to image quality, variations in eye appearance, or limitations in the analysis model. It is essential to consult an ophthalmologist for a thorough eye examination and diagnosis.",
+                            color = colorResource(id = R.color.darkPrimary),
+                            fontSize = 14.sp,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    Button(
+                        onClick = { generatePdf(context, capturedImageBitmap, classLabels.getOrNull(bestClassIndex) ?: "Unknown", bestConfidence) },
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text("Download PDF")
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp)) // Add space before button
+
+                    Button(
+                        onClick = { showDetailsCard = false },
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text("Close")
+                    }
+                }
             }
         }
     }
 }
 
-fun cropBitmap(bitmap: Bitmap, rect: RectF): Bitmap {
-    val croppedRect = Rect(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
-    // Ensure the cropping rectangle is within the bounds of the bitmap
-    val safeLeft = max(0, croppedRect.left)
-    val safeTop = max(0, croppedRect.top)
-    val safeRight = min(bitmap.width, croppedRect.right)
-    val safeBottom = min(bitmap.height, croppedRect.bottom)
-    val safeWidth = safeRight - safeLeft
-    val safeHeight = safeBottom - safeTop
-    return if (safeWidth > 0 && safeHeight > 0) {
-        Bitmap.createBitmap(bitmap, safeLeft, safeTop, safeWidth, safeHeight)
-    } else {
-        // Return an empty bitmap or handle the error as needed
-        Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-    }
+fun rotateBitmap(context: Context, bitmap: Bitmap): Bitmap {
+    val matrix = Matrix()
+    matrix.postRotate(90f) // Or any other rotation you need
+
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
 }
 
-fun saveCroppedBitmap(context: Context, bitmap: Bitmap, filename: String) {
-    val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-        put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-    }
-    context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)?.let { uri ->
-        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+fun captureAndBlurScreenshot(context: Context, onBitmapReady: (Bitmap?) -> Unit) {
+    // Capture the current composable as a Bitmap
+    // Apply blur using RenderScript or other algorithm
+    // Return the blurred Bitmap using onBitmapReady
+}
+
+fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confidence: Float) {
+    val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
+    val filePath = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
+
+    try {
+        val writer = PdfWriter(FileOutputStream(filePath))
+        val pdf = PdfDocument(writer)
+        val document = Document(pdf)
+
+        // Add image to PDF
+        if (imageBitmap != null) {
+            val stream = ByteArrayOutputStream()
+            imageBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            val imageData = ImageDataFactory.create(stream.toByteArray())
+            val image = Image(imageData) // Correct Image creation
+            image.scaleToFit(500f, 500f)
+            document.add(image) // Correct usage
         }
+
+        // Add text to PDF
+        document.add(Paragraph("Diagnosis: $className"))
+        document.add(Paragraph("Confidence: ${String.format("%.2f", confidence * 100)}%"))
+
+        document.close()
+
+        // Optionally, show a toast message to indicate the PDF has been saved
+        Toast.makeText(context, "PDF saved to Downloads", Toast.LENGTH_SHORT).show()
+    } catch (e: IOException) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error saving PDF", Toast.LENGTH_SHORT).show()
     }
 }
 
-suspend fun processAndClassifyEyes(
-    context: Context,
-    bitmap: Bitmap?,
-    leftEyeBox: RectF?,
-    rightEyeBox: RectF?,
-    imageClassifierHelper: ImageClassifierHelper?,
-    onClassificationResult: (List<Float>, Float, Int) -> Unit
-) {
-    if (bitmap != null && leftEyeBox != null && rightEyeBox != null && imageClassifierHelper != null) {
-        val croppedLeftEyeBitmap = cropBitmap(bitmap, leftEyeBox)
-        val croppedRightEyeBitmap = cropBitmap(bitmap, rightEyeBox)
+// Example RenderScript blur (requires RenderScript dependency)
+fun blurBitmap(context: Context, bitmap: Bitmap, radius: Float): Bitmap {
+    val rs = RenderScript.create(context)
+    val input = Allocation.createFromBitmap(rs, bitmap)
+    val output = Allocation.createTyped(rs, input.type)
+    val blur = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
 
-        val leftEyeResults = imageClassifierHelper.classifyImage(croppedLeftEyeBitmap)
-        val rightEyeResults = imageClassifierHelper.classifyImage(croppedRightEyeBitmap)
+    blur.setInput(input)
+    blur.setRadius(radius)
+    blur.forEach(output)
 
-        val combinedResults = leftEyeResults.zip(rightEyeResults).map { (left, right) -> (left + right) / 2 }
-        val bestClassIndex = combinedResults.indexOf(combinedResults.maxOrNull() ?: 0f)
-        val bestConfidence = combinedResults.maxOrNull() ?: 0f
+    output.copyTo(bitmap)
 
-        onClassificationResult(combinedResults, bestConfidence, bestClassIndex)
-    }
+    rs.destroy()
+    return bitmap
 }
 
-fun getResultMessage(resultIndex: Int, confidence: Float): String {
-    val classLabels = listOf("Normal", "Cataract", "Glaucoma")
-    val className = classLabels.getOrNull(resultIndex) ?: "Unknown"
-    val formattedConfidence = String.format("%.2f", confidence * 100)
-
-    return when (className) {
-        "Normal" -> "Normal"
-        "Cataract" -> "Cataract"
-        "Glaucoma" -> "Glaucoma"
-        else -> className
-    }
-}
 
 // Placeholder function - replace with your actual logic
 fun extractBoundingBoxesFromBitmap(bitmap: Bitmap): List<RectF> {
@@ -460,3 +664,18 @@ fun extractBoundingBoxesFromBitmap(bitmap: Bitmap): List<RectF> {
     return emptyList()
 
 }
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+fun CameraScreenPreview() {
+    val hasCamPermission = true
+
+    EyeDiseaseAppTheme {
+        if (hasCamPermission) {
+            CameraView()
+        } else {
+            Text(text = "Camera permission denied")
+        }
+    }
+}
+
