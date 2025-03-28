@@ -59,6 +59,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.example.eyediseaseapp.util.UltralyticsAPIHelper
 import com.example.eyediseaseapp.util.generatePdf
 import kotlinx.coroutines.delay
 import java.io.IOException
@@ -85,6 +86,10 @@ fun ImageClassificationScreen(navController: NavController) {
         }
     }
 
+    val ultralyticsAPIHelper = remember {
+        UltralyticsAPIHelper()
+    }
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -92,14 +97,14 @@ fun ImageClassificationScreen(navController: NavController) {
     }
 
     fun getResultMessage(resultIndex: Int, confidence: Float): String {
-        val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+        val classLabels = listOf("Cataract", "Glaucoma", "Normal")
         val className = classLabels.getOrNull(resultIndex) ?: "Unknown"
         val formattedConfidence = String.format("%.2f", confidence * 100)
 
         return when (className) {
-            "Normal" -> "Normal"
             "Cataract" -> "Cataract"
             "Glaucoma" -> "Glaucoma"
+            "Normal" -> "Normal"
             else -> className
         }
     }
@@ -135,7 +140,7 @@ fun ImageClassificationScreen(navController: NavController) {
             delay(5000)
 
             if (bitmap != null) {
-                results = imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
+                results =  imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
                 if (results.isNotEmpty()) {
                     bestClassIndex = results.indexOf(results.maxOrNull() ?: 0f)
                     bestConfidence = results.maxOrNull() ?: 0f
@@ -188,9 +193,9 @@ fun ImageClassificationScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.warning_icon), // Replace with your warning icon
+                        painter = painterResource(id = R.drawable.warning_icon),
                         contentDescription = "Warning Icon",
-                        modifier = Modifier.size(24.dp) // Adjust size as needed
+                        modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.padding(4.dp))
                     Text(

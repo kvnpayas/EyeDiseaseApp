@@ -1,9 +1,12 @@
 package com.example.eyediseaseapp
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -129,24 +132,21 @@ fun HomeScreen(navController: NavController) {
                 textAlign = TextAlign.Center,
                 style = TextStyle(fontWeight = FontWeight.ExtraBold),
             )
+            Spacer(modifier = Modifier.height(15.dp))
+            Text(
+                modifier = Modifier.clickable {
+                    navController.navigate("learnMore")
+                },
+                text = "Learn More",
+                color = colorResource(id = R.color.darkPrimary),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                style = TextStyle(fontWeight = FontWeight.ExtraBold),
+            )
         }
     }
 }
 
-@Composable
-fun AboutUsScreen() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "This is the About Us Page",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-    }
-}
 
 @Preview(showBackground = true)
 @Composable

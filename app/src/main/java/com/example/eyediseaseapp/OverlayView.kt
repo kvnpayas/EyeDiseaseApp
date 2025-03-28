@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
+import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.min
 
@@ -216,26 +217,53 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         offsetX: Float,
         offsetY: Float
     ): RectF? {
-        if (landmarkIndices.isEmpty()) return null
-        var minX = Float.MAX_VALUE
-        var minY = Float.MAX_VALUE
-        var maxX = Float.MIN_VALUE
-        var maxY = Float.MIN_VALUE
+        if (landmarkIndices.isEmpty() || landmarkIndices.size < 2) return null // Need at least 2 points
 
-        for (index in landmarkIndices) {
-            if (index < landmarks.size) {
-                val landmark = landmarks[index]
-                val x = landmark.x() * imageWidth * scaleFactor + offsetX
-                val y = landmark.y() * imageHeight * scaleFactor + offsetY
-                minX = min(minX, x)
-                minY = min(minY, y)
-                maxX = max(maxX, x)
-                maxY = max(maxY, y)
+        val points = landmarkIndices.mapNotNull { index ->
+            landmarks.getOrNull(index)?.let { landmark ->
+                landmark.x() * imageWidth * scaleFactor + offsetX to landmark.y() * imageHeight * scaleFactor + offsetY
             }
         }
 
-        val padding = 10f // Adjust padding as needed for the iris
-        return RectF(minX - padding, minY - padding, maxX + padding, maxY + padding)
+        if (points.size < 2) return null
+
+        // Calculate center
+        val centerX = points.map { it.first }.average().toFloat()
+        val centerY = points.map { it.second }.average().toFloat()
+
+        // Calculate bounding box dimensions
+        var minX = points.minOf { it.first }
+        var minY = points.minOf { it.second }
+        var maxX = points.maxOf { it.first }
+        var maxY = points.maxOf { it.second }
+
+        // Calculate rotation angle (simplified)
+        val leftPoint = points.minByOrNull { it.first } ?: return RectF(minX, minY, maxX, maxY) // Default if error
+        val rightPoint = points.maxByOrNull { it.first } ?: return RectF(minX, minY, maxX, maxY)
+
+        val deltaY = rightPoint.second - leftPoint.second
+        val deltaX = rightPoint.first - leftPoint.first
+        val angle = atan2(deltaY, deltaX) * 180 / Math.PI.toFloat()
+
+        // Apply rotation (simplified - adjust as needed)
+        val padding = 10f
+        val width = (maxX - minX) + 2 * padding
+        val height = (maxY - minY) + 2 * padding
+
+        // Adjust for elliptical shape (more robust)
+        val aspectRatio = 1.4f // Adjust as needed
+        val adjustedWidth = maxOf(width, height * aspectRatio)
+        val adjustedHeight = minOf(height, width / aspectRatio)
+
+        val rotatedRect = RectF(
+            centerX - adjustedWidth / 2,
+            centerY - adjustedHeight / 2,
+            centerX + adjustedWidth / 2,
+            centerY + adjustedHeight / 2
+        )
+
+        // Note: A true rotation would require matrix transformations, which is more complex
+        return rotatedRect
     }
 
     companion object {

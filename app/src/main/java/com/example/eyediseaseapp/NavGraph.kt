@@ -20,5 +20,8 @@ fun NavGraph(navController: NavHostController) {
         composable("camera") {
             CameraScreen()
         }
+        composable("learnMore") {
+            EducationalContentScreen(navController)
+        }
     }
 }
