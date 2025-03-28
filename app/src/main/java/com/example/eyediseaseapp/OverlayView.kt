@@ -64,7 +64,8 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
             val offsetY = (height - scaledImageHeight) / 2f
 
             faceLandmarkerResult.faceLandmarks().forEach { faceLandmarks ->
-                drawEyeBoundingBoxes(canvas, faceLandmarks, offsetX, offsetY)
+                drawIrisLandmarks(canvas, faceLandmarks, offsetX, offsetY)
+                drawIrisBoundingBoxes (canvas, faceLandmarks, offsetX, offsetY)// Call the iris drawing function
             }
         }
     }
@@ -155,6 +156,86 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
             }
         }
         invalidate()
+    }
+
+    private fun drawIrisLandmarks(
+        canvas: Canvas,
+        faceLandmarks: List<NormalizedLandmark>,
+        offsetX: Float,
+        offsetY: Float
+    ) {
+        val irisPaint = Paint().apply {
+            color = Color.BLUE
+            strokeWidth = 10f
+            style = Paint.Style.FILL
+        }
+
+        // Draw left iris landmarks
+        LEFT_IRIS_LANDMARKS.forEach { index ->
+            if (index < faceLandmarks.size) {
+                val landmark = faceLandmarks[index]
+                val x = landmark.x() * imageWidth * scaleFactor + offsetX
+                val y = landmark.y() * imageHeight * scaleFactor + offsetY
+                canvas.drawCircle(x, y, 8f, irisPaint) // Draw a circle for each iris landmark
+            }
+        }
+
+        // Draw right iris landmarks
+        RIGHT_IRIS_LANDMARKS.forEach { index ->
+            if (index < faceLandmarks.size) {
+                val landmark = faceLandmarks[index]
+                val x = landmark.x() * imageWidth * scaleFactor + offsetX
+                val y = landmark.y() * imageHeight * scaleFactor + offsetY
+                canvas.drawCircle(x, y, 8f, irisPaint) // Draw a circle for each iris landmark
+            }
+        }
+    }
+
+    private fun drawIrisBoundingBoxes(
+        canvas: Canvas,
+        faceLandmarks: List<NormalizedLandmark>,
+        offsetX: Float,
+        offsetY: Float
+    ) {
+        val irisBoundingBoxPaint = Paint().apply {
+            color = Color.CYAN
+            strokeWidth = 3f
+            style = Paint.Style.STROKE
+        }
+
+        val leftIrisBox = calculateIrisBoundingBox(faceLandmarks, LEFT_IRIS_LANDMARKS, offsetX, offsetY)
+        leftIrisBox?.let { canvas.drawRect(it, irisBoundingBoxPaint) }
+
+        val rightIrisBox = calculateIrisBoundingBox(faceLandmarks, RIGHT_IRIS_LANDMARKS, offsetX, offsetY)
+        rightIrisBox?.let { canvas.drawRect(it, irisBoundingBoxPaint) }
+    }
+
+    private fun calculateIrisBoundingBox(
+        landmarks: List<NormalizedLandmark>,
+        landmarkIndices: List<Int>,
+        offsetX: Float,
+        offsetY: Float
+    ): RectF? {
+        if (landmarkIndices.isEmpty()) return null
+        var minX = Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var maxY = Float.MIN_VALUE
+
+        for (index in landmarkIndices) {
+            if (index < landmarks.size) {
+                val landmark = landmarks[index]
+                val x = landmark.x() * imageWidth * scaleFactor + offsetX
+                val y = landmark.y() * imageHeight * scaleFactor + offsetY
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+            }
+        }
+
+        val padding = 10f // Adjust padding as needed for the iris
+        return RectF(minX - padding, minY - padding, maxX + padding, maxY + padding)
     }
 
     companion object {

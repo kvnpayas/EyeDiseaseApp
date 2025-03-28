@@ -95,6 +95,7 @@ import androidx.compose.ui.text.style.LineBreak.Companion.Paragraph
 import androidx.compose.ui.zIndex
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.example.eyediseaseapp.util.generatePdf
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 import com.itextpdf.io.image.ImageDataFactory
@@ -858,41 +859,41 @@ fun captureAndBlurScreenshot(context: Context, onBitmapReady: (Bitmap?) -> Unit)
     // Return the blurred Bitmap using onBitmapReady
 }
 
-fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confidence: Float) {
-    val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
-    val filePath = File(
-        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-        fileName
-    )
-
-    try {
-        val writer = PdfWriter(FileOutputStream(filePath))
-        val pdf = PdfDocument(writer)
-        val document = Document(pdf)
-
-        // Add image to PDF
-        if (imageBitmap != null) {
-            val stream = ByteArrayOutputStream()
-            imageBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-            val imageData = ImageDataFactory.create(stream.toByteArray())
-            val image = Image(imageData) // Correct Image creation
-            image.scaleToFit(500f, 500f)
-            document.add(image) // Correct usage
-        }
-
-        // Add text to PDF
-        document.add(Paragraph("Diagnosis: $className"))
-        document.add(Paragraph("Confidence: ${String.format("%.2f", confidence * 100)}%"))
-
-        document.close()
-
-        // Optionally, show a toast message to indicate the PDF has been saved
-        Toast.makeText(context, "PDF saved to Downloads", Toast.LENGTH_SHORT).show()
-    } catch (e: IOException) {
-        e.printStackTrace()
-        Toast.makeText(context, "Error saving PDF", Toast.LENGTH_SHORT).show()
-    }
-}
+//fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confidence: Float) {
+//    val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
+//    val filePath = File(
+//        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+//        fileName
+//    )
+//
+//    try {
+//        val writer = PdfWriter(FileOutputStream(filePath))
+//        val pdf = PdfDocument(writer)
+//        val document = Document(pdf)
+//
+//        // Add image to PDF
+//        if (imageBitmap != null) {
+//            val stream = ByteArrayOutputStream()
+//            imageBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+//            val imageData = ImageDataFactory.create(stream.toByteArray())
+//            val image = Image(imageData) // Correct Image creation
+//            image.scaleToFit(500f, 500f)
+//            document.add(image) // Correct usage
+//        }
+//
+//        // Add text to PDF
+//        document.add(Paragraph("Diagnosis: $className"))
+//        document.add(Paragraph("Confidence: ${String.format("%.2f", confidence * 100)}%"))
+//
+//        document.close()
+//
+//        // Optionally, show a toast message to indicate the PDF has been saved
+//        Toast.makeText(context, "PDF saved to Downloads", Toast.LENGTH_SHORT).show()
+//    } catch (e: IOException) {
+//        e.printStackTrace()
+//        Toast.makeText(context, "Error saving PDF", Toast.LENGTH_SHORT).show()
+//    }
+//}
 
 
 @androidx.compose.ui.tooling.preview.Preview(showBackground = true)

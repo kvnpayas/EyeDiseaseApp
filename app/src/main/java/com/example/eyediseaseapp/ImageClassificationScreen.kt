@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +59,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.example.eyediseaseapp.util.generatePdf
 import kotlinx.coroutines.delay
 import java.io.IOException
 
@@ -385,6 +387,21 @@ fun ImageClassificationScreen(navController: NavController) {
                                         color = colorResource(id = R.color.darkPrimary),
                                         fontSize = 14.sp,
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.height(32.dp))
+                                Button(
+                                    onClick = {
+                                        generatePdf(
+                                            context,
+                                            bitmap,
+                                            resultMessage,
+                                            bestConfidence
+                                        )
+                                    },
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                ) {
+                                    Text("Download PDF")
                                 }
                             }
 
