@@ -1,6 +1,5 @@
 package com.example.eyediseaseapp.util
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.google.gson.annotations.SerializedName
@@ -15,22 +14,23 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Query
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.util.concurrent.TimeUnit
 import retrofit2.Response
-import java.net.MalformedURLException
-import java.net.URL
+import okhttp3.ResponseBody
+import retrofit2.Converter
+import java.io.File
+import java.lang.reflect.Type
 
 interface UltralyticsApiService {
     @Multipart
     @POST("/")
     suspend fun classifyImage(
         @Part image: MultipartBody.Part,
-        @Query("model") model: String,
-        @Query("imgsz") imgsz: Int,
-        @Query("conf") conf: Float,
-        @Query("iou") iou: Float,
-        @Query("api_key") apiKey: String
+        @Query("model") model: String = "https://hub.ultralytics.com/models/KgnTTMy0x3ZyCCxmm70c",
+        @Query("imgsz") imgsz: Int = 640,
+        @Query("conf") conf: Float = 0.25f,
+        @Query("iou") iou: Float = 0.45f,
+        @Query("api_key") apiKey: String = "461adc14a1da30678afbc86355d309bff1a54ebb6d"
     ): Response<UltralyticsApiResponse>
 }
 
@@ -66,8 +66,6 @@ data class Speed(
 
 class UltralyticsAPIHelper {
     private val baseUrl = "https://predict.ultralytics.com/"
-    private val modelUrl = "https://hub.ultralytics.com/models/KgnTTMy0x3ZyCCxmm70casdasdasdasdasdadasdasda"
-    private val apiKey = "461adc14a1da30678afbc86355d309bff1a54ebb6ddasdasdsadasda"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -83,48 +81,46 @@ class UltralyticsAPIHelper {
 
     private val apiService = retrofit.create(UltralyticsApiService::class.java)
 
-    suspend fun classifyImage(context: Context, bitmap: Bitmap): List<Float> {
-        return try {
-            // URL Validation
-            try {
-                URL(baseUrl)
-                URL(modelUrl)
-            } catch (e: MalformedURLException) {
-                Log.e("UltralyticsAPIHelper", "Invalid URL", e)
-                return emptyList()
-            }
 
+    suspend fun classifyImage(bitmap: Bitmap): List<Float> {
+        return try {
             val stream = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
             val byteArray = stream.toByteArray()
 
             Log.d("UltralyticsAPIHelper", "Image Byte Array Size: ${byteArray.size}")
-
+            Log.d("UltralyticsAPIHelper", "Image Content Type: image/jpeg")
             val requestFile = byteArray.toRequestBody("image/jpeg".toMediaTypeOrNull())
             val imagePart = MultipartBody.Part.createFormData("file", "image.jpg", requestFile)
 
-            Log.d("UltralyticsAPIHelper", "API Request URL: $baseUrl")
-            Log.d("UltralyticsAPIHelper", "API Model: $modelUrl")
-            Log.d("UltralyticsAPIHelper", "Multipart file name: image.jpg")
-            Log.d("UltralyticsAPIHelper", "Multipart content type: image/jpeg")
-            Log.d("UltralyticsAPIHelper", "API Parameters: imgsz=640, conf=0.25, iou=0.45, apiKey=$apiKey")
 
-            val response = apiService.classifyImage(imagePart, modelUrl, 640, 0.25f, 0.45f, apiKey)
+            Log.d("UltralyticsAPIHelper", "API Request URL: ${baseUrl}")
+            Log.d("UltralyticsAPIHelper", "API Request Model: https://hub.ultralytics.com/models/KgnTTMy0x3ZyCCxmm70c")
 
+
+            val response = apiService.classifyImage(imagePart)
             Log.d("UltralyticsAPIHelper", "API Response Code: ${response.code()}")
-            Log.d("UltralyticsAPIHelper", "API Response Body: ${response.body()}")
-
             if (response.isSuccessful) {
                 val apiResponse = response.body()
+                Log.d("UltralyticsAPIHelper", "API Response: ${apiResponse}")
 
-                if (apiResponse?.images?.isNotEmpty() == true && apiResponse.images[0].results != null) {
-                    return apiResponse.images[0].results?.filter { it.classId in 0..2 }?.map { it.confidence } ?: emptyList()
+                if (apiResponse != null && apiResponse.images != null && apiResponse.images.isNotEmpty() && apiResponse.images[0].results != null) {
+                    val predictions = apiResponse.images[0].results
+
+                    val results = FloatArray(3) { 0f }.toMutableList()
+
+                    predictions?.forEach { prediction ->
+                        if (prediction.classId in 0..2) {
+                            results[prediction.classId] = prediction.confidence
+                        }
+                    }
+                    return results
                 } else {
-                    Log.e("UltralyticsAPIHelper", "API response or predictions is null or empty")
+                    Log.e("UltralyticsAPIHelper", "API response or predictions is null")
                     return emptyList()
                 }
             } else {
-                Log.e("UltralyticsAPIHelper", "API request failed with code: ${response.code()}, body: ${response.errorBody()?.string()}")
+                Log.e("UltralyticsAPIHelper", "API request failed: ${response.errorBody()?.string()}")
                 return emptyList()
             }
         } catch (e: Exception) {

@@ -77,7 +77,7 @@ fun ImageClassificationScreen(navController: NavController) {
         try {
             ImageClassifierHelper(
                 context,
-                "model_unquant.tflite",
+                "eye_disease.tflite",
                 3
             ) // Replace with your model name
         } catch (e: IOException) {
@@ -97,14 +97,14 @@ fun ImageClassificationScreen(navController: NavController) {
     }
 
     fun getResultMessage(resultIndex: Int, confidence: Float): String {
-        val classLabels = listOf("Cataract", "Glaucoma", "Normal")
+        val classLabels = listOf("Normal", "Cataract", "Glaucoma")
         val className = classLabels.getOrNull(resultIndex) ?: "Unknown"
         val formattedConfidence = String.format("%.2f", confidence * 100)
 
         return when (className) {
+            "Normal" -> "Normal"
             "Cataract" -> "Cataract"
             "Glaucoma" -> "Glaucoma"
-            "Normal" -> "Normal"
             else -> className
         }
     }
@@ -140,7 +140,7 @@ fun ImageClassificationScreen(navController: NavController) {
             delay(5000)
 
             if (bitmap != null) {
-                results =  imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
+                results = imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
                 if (results.isNotEmpty()) {
                     bestClassIndex = results.indexOf(results.maxOrNull() ?: 0f)
                     bestConfidence = results.maxOrNull() ?: 0f
