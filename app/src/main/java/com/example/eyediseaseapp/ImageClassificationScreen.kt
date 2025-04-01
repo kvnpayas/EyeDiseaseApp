@@ -97,9 +97,15 @@ fun ImageClassificationScreen(navController: NavController) {
     }
 
     fun getResultMessage(resultIndex: Int, confidence: Float): String {
-        val classLabels = listOf("Normal", "Cataract", "Glaucoma")
-        val className = classLabels.getOrNull(resultIndex) ?: "Unknown"
         val formattedConfidence = String.format("%.2f", confidence * 100)
+        val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+        val className: String
+
+        if (confidence * 100 < 90) {
+            className = "Unknown"
+        } else {
+            className = classLabels.getOrNull(resultIndex) ?: "Unknown"
+        }
 
         return when (className) {
             "Normal" -> "Normal"
@@ -292,12 +298,15 @@ fun ImageClassificationScreen(navController: NavController) {
                                     fontSize = 24.sp,
                                     style = TextStyle(fontWeight = FontWeight.ExtraBold),
                                 )
-                                Spacer(modifier = Modifier.padding(2.dp))
-                                Text(
-                                    text = "Confidence: $confidence%",
-                                    color = colorResource(id = R.color.darkPrimary),
-                                    fontSize = 14.sp,
-                                )
+
+                                if(bestConfidence * 100 > 90) {
+                                    Spacer(modifier = Modifier.padding(2.dp))
+                                    Text(
+                                        text = "Confidence: $confidence%",
+                                        color = colorResource(id = R.color.darkPrimary),
+                                        fontSize = 14.sp,
+                                    )
+                                }
                                 Spacer(modifier = Modifier.padding(10.dp))
                                 if(resultMessage == "Cataract" || resultMessage == "Glaucoma"){
                                     Text(
@@ -393,20 +402,21 @@ fun ImageClassificationScreen(navController: NavController) {
                                         fontSize = 14.sp,
                                     )
                                 }
-
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Button(
-                                    onClick = {
-                                        generatePdf(
-                                            context,
-                                            bitmap,
-                                            resultMessage,
-                                            bestConfidence
-                                        )
-                                    },
-                                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                                ) {
-                                    Text("Download PDF")
+                                if(bestConfidence * 100 > 90) {
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Button(
+                                        onClick = {
+                                            generatePdf(
+                                                context,
+                                                bitmap,
+                                                resultMessage,
+                                                bestConfidence
+                                            )
+                                        },
+                                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                                    ) {
+                                        Text("Download PDF")
+                                    }
                                 }
                             }
 

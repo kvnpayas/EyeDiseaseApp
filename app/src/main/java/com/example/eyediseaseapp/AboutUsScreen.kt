@@ -124,21 +124,24 @@ fun AboutUsScreen(navController: NavController) {
             TeamMember(
                 name = "Jhaydee F. De Peralta ",
                 role = "Tarlac",
-                contact = "0933 123 4567",
+                email = "jhaydeperalta@gmail.com",
+                contact = "0952 635 0012",
 //                image = R.drawable.team_member_placeholder
             )
             Spacer(modifier = Modifier.height(10.dp))
             TeamMember(
                 name = "Edilberto S. Guevarra ",
                 role = "Tarlac",
-                contact = "0933 123 4567",
+                email = "guevarrabert@gmail.com",
+                contact = "0995 469 1006",
 //                image = R.drawable.team_member_placeholder
             )
             Spacer(modifier = Modifier.height(10.dp))
             TeamMember(
                 name = "Ivan Carl C. Onofre",
                 role = "Tarlac",
-                contact = "0933 123 4567",
+                email = "civancarl@gmail.com",
+                contact = "0931 034 9746",
 //                image = R.drawable.team_member_placeholder
             )
             Spacer(modifier = Modifier.height(20.dp))
@@ -147,7 +150,7 @@ fun AboutUsScreen(navController: NavController) {
 }
 
 @Composable
-fun TeamMember(name: String, role: String, contact: String) {
+fun TeamMember(name: String, role: String, email: String, contact: String) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -171,6 +174,13 @@ fun TeamMember(name: String, role: String, contact: String) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = role,
+            color = colorResource(id = R.color.darkPrimary),
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = email,
             color = colorResource(id = R.color.darkPrimary),
             fontSize = 14.sp,
             textAlign = TextAlign.Center

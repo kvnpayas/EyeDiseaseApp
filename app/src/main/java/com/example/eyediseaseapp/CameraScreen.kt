@@ -187,7 +187,7 @@ fun CameraView() {
         try {
             ImageClassifierHelper(
                 context,
-                "model_unquant.tflite",
+                "eye_disease.tflite",
                 3
             )
         } catch (e: Exception) {
@@ -517,8 +517,12 @@ fun CameraView() {
                                     modifier = Modifier.padding(16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    val className =
-                                        classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+                                    val className: String
+                                    if (bestConfidence * 100 < 90) {
+                                        className = "Unknown"
+                                    } else {
+                                        className = classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+                                    }
                                     val formattedConfidence =
                                         String.format("%.2f", bestConfidence * 100)
 
@@ -528,12 +532,14 @@ fun CameraView() {
                                         fontWeight = FontWeight.Bold,
                                         color = colorResource(id = R.color.darkPrimary)
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "Confidence: $formattedConfidence%",
-                                        fontSize = 16.sp,
-                                        color = Color.Gray
-                                    )
+                                    if(bestConfidence * 100 > 90) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Confidence: $formattedConfidence%",
+                                            fontSize = 16.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Button(
                                         modifier = Modifier.padding(5.dp)
@@ -547,13 +553,15 @@ fun CameraView() {
                                             captureAndBlurScreenshot(context) { blurredBitmap = it }
                                         },
                                     ) {
-                                        Text(
-                                            text = "Show more details",
-                                            color = Color.White,
-                                            fontSize = 16.sp,
-                                            textAlign = TextAlign.Center,
-                                            style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                                        )
+                                        if(bestConfidence * 100 > 90) {
+                                            Text(
+                                                text = "Show more details",
+                                                color = Color.White,
+                                                fontSize = 16.sp,
+                                                textAlign = TextAlign.Center,
+                                                style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                                            )
+                                        }
                                     }
                                 }
                             }
