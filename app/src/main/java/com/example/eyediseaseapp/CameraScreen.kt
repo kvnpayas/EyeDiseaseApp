@@ -35,6 +35,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -42,6 +43,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,6 +85,7 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -419,7 +422,7 @@ fun CameraView() {
                             ) // Add OverlayView
 
                         }
-                        if (capturedImageBitmap != null){
+                        if (capturedImageBitmap != null) {
                             Column(modifier = Modifier.fillMaxSize()) {
                                 AnimatedVisibility(visible = !isLoading) {
                                     capturedImageBitmap?.let { bitmap ->
@@ -461,7 +464,7 @@ fun CameraView() {
                                     Log.d("CameraView", "captureImage: $imageCapture")
                                     takePicture()
                                     initState = false
-                                          },
+                                },
                                 modifier = Modifier
                                     .align(Alignment.CenterHorizontally)
                                     .padding(top = 5.dp)
@@ -479,9 +482,10 @@ fun CameraView() {
                         }
                     }
                     if (capturedImageBitmap != null) {
-                        if(!isLoading) {
+                        if (!isLoading) {
                             Button(
-                                modifier = Modifier.padding(5.dp)
+                                modifier = Modifier
+                                    .padding(5.dp)
                                     .align(Alignment.CenterHorizontally),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = colorResource(id = R.color.darkPrimary)
@@ -521,7 +525,8 @@ fun CameraView() {
                                     if (bestConfidence * 100 < 90) {
                                         className = "Unknown"
                                     } else {
-                                        className = classLabels.getOrNull(bestClassIndex) ?: "Unknown"
+                                        className =
+                                            classLabels.getOrNull(bestClassIndex) ?: "Unknown"
                                     }
                                     val formattedConfidence =
                                         String.format("%.2f", bestConfidence * 100)
@@ -532,7 +537,7 @@ fun CameraView() {
                                         fontWeight = FontWeight.Bold,
                                         color = colorResource(id = R.color.darkPrimary)
                                     )
-                                    if(bestConfidence * 100 > 90) {
+                                    if (bestConfidence * 100 > 90) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = "Confidence: $formattedConfidence%",
@@ -540,20 +545,24 @@ fun CameraView() {
                                             color = Color.Gray
                                         )
                                     }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Button(
-                                        modifier = Modifier.padding(5.dp)
-                                            .align(Alignment.CenterHorizontally),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = colorResource(id = R.color.darkPrimary)
-                                        ),
-                                        shape = RoundedCornerShape(10.dp),
-                                        onClick = {
-                                            showDetailsCard = true
-                                            captureAndBlurScreenshot(context) { blurredBitmap = it }
-                                        },
-                                    ) {
-                                        if(bestConfidence * 100 > 90) {
+                                    if (bestConfidence * 100 > 90) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Button(
+                                            modifier = Modifier
+                                                .padding(5.dp)
+                                                .align(Alignment.CenterHorizontally),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = colorResource(id = R.color.darkPrimary)
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            onClick = {
+                                                showDetailsCard = true
+                                                captureAndBlurScreenshot(context) {
+                                                    blurredBitmap = it
+                                                }
+                                            },
+                                        ) {
+
                                             Text(
                                                 text = "Show more details",
                                                 color = Color.White,
@@ -694,6 +703,65 @@ fun CameraView() {
                             color = colorResource(id = R.color.darkPrimary),
                             fontSize = 16.sp,
                         )
+                        // Add mild, moderate, or severe selection here
+                        var severity by remember { mutableStateOf("Mild") } // Default to mild
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            OutlinedButton(
+                                onClick = { severity = "Mild" },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (severity == "Mild") colorResource(id = R.color.darkPrimary) else Color.Transparent,
+                                    contentColor = if (severity == "Mild") Color.White else Color.Black
+                                ),
+                                border = BorderStroke(1.dp, Color.Gray)
+                            ) {
+                                Text("Mild")
+                            }
+
+                            OutlinedButton(
+                                onClick = { severity = "Moderate" },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (severity == "Moderate") colorResource(id = R.color.darkPrimary) else Color.Transparent,
+                                    contentColor = if (severity == "Moderate") Color.White else Color.Black
+                                ),
+                                border = BorderStroke(1.dp, Color.Gray)
+                            ) {
+                                Text("Moderate")
+                            }
+
+                            OutlinedButton(
+                                onClick = { severity = "Severe" },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (severity == "Severe") colorResource(id = R.color.darkPrimary) else Color.Transparent,
+                                    contentColor = if (severity == "Severe") Color.White else Color.Black
+                                ),
+                                border = BorderStroke(1.dp, Color.Gray)
+                            ) {
+                                Text("Severe")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Button(
+                            onClick = {
+                                generatePdf(
+                                    context,
+                                    capturedImageBitmap,
+                                    classLabels.getOrNull(bestClassIndex) ?: "Unknown",
+                                    bestConfidence,
+                                    severity
+                                )
+                            },
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        ) {
+                            Text("Download PDF")
+                        }
                     } else if (className == "Normal") {
                         Text(
                             text = "If you are experiencing any eye discomfort, vision changes, or have any concerns about your eye health, it is always recommended to consult with a qualified ophthalmologist for a comprehensive eye examination.",
@@ -706,22 +774,6 @@ fun CameraView() {
                             color = colorResource(id = R.color.darkPrimary),
                             fontSize = 14.sp,
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    Button(
-                        onClick = {
-                            generatePdf(
-                                context,
-                                capturedImageBitmap,
-                                classLabels.getOrNull(bestClassIndex) ?: "Unknown",
-                                bestConfidence
-                            )
-                        },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        Text("Download PDF")
                     }
 
                     Spacer(modifier = Modifier.height(32.dp)) // Add space before button

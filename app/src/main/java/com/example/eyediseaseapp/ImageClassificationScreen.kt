@@ -16,6 +16,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +35,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -402,7 +406,54 @@ fun ImageClassificationScreen(navController: NavController) {
                                         fontSize = 14.sp,
                                     )
                                 }
+                                // I want to add select mild moderate orr severe here
+
                                 if(bestConfidence * 100 > 90) {
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    // Add mild, moderate, or severe selection here
+                                    var severity by remember { mutableStateOf("Mild") } // Default to mild
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { severity = "Mild" },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (severity == "Mild") colorResource(id = R.color.darkPrimary) else Color.Transparent,
+                                                contentColor = if (severity == "Mild") Color.White else Color.Black
+                                            ),
+                                            border = BorderStroke(1.dp, Color.Gray)
+                                        ) {
+                                            Text("Mild")
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { severity = "Moderate" },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (severity == "Moderate") colorResource(id = R.color.darkPrimary) else Color.Transparent,
+                                                contentColor = if (severity == "Moderate") Color.White else Color.Black
+                                            ),
+                                            border = BorderStroke(1.dp, Color.Gray)
+                                        ) {
+                                            Text("Moderate")
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { severity = "Severe" },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (severity == "Severe") colorResource(id = R.color.darkPrimary) else Color.Transparent,
+                                                contentColor = if (severity == "Severe") Color.White else Color.Black
+                                            ),
+                                            border = BorderStroke(1.dp, Color.Gray)
+                                        ) {
+                                            Text("Severe")
+                                        }
+                                    }
+
+
                                     Spacer(modifier = Modifier.height(32.dp))
                                     Button(
                                         onClick = {
@@ -410,7 +461,8 @@ fun ImageClassificationScreen(navController: NavController) {
                                                 context,
                                                 bitmap,
                                                 resultMessage,
-                                                bestConfidence
+                                                bestConfidence,
+                                                severity
                                             )
                                         },
                                         modifier = Modifier.align(Alignment.CenterHorizontally)

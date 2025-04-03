@@ -22,7 +22,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confidence: Float) {
+fun generatePdf(
+    context: Context,
+    imageBitmap: Bitmap?,
+    className: String,
+    confidence: Float,
+    severity: String
+) {
     val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
     val filePath = File(
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -39,12 +45,6 @@ fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confi
             .setBold()
             .setTextAlignment(TextAlignment.CENTER)
         document.add(titleParagraph)
-
-        // Add date to PDF
-        val currentDate = Date()
-        val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val formattedDate = dateFormatter.format(currentDate)
-        document.add(Paragraph("Date: $formattedDate"))
 
         // Add image to PDF
         if (imageBitmap != null) {
@@ -68,82 +68,173 @@ fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confi
         }
 
         // Add text to PDF
-        document.add(Paragraph("Diagnosis: $className"))
-        document.add(Paragraph("Confidence: ${String.format("%.2f", confidence * 100)}%"))
+        document.add(Paragraph("Detected Eye Disease: $className").setBold())
+        // Add date to PDF
+        val currentDate = Date()
+        val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val formattedDate = dateFormatter.format(currentDate)
+        document.add(Paragraph("Date: $formattedDate").setBold())
+        document.add(
+            Paragraph(
+                "Detection Confidence: ${
+                    String.format(
+                        "%.2f",
+                        confidence * 100
+                    )
+                }%"
+            ).setBold()
+        )
 
-        // Add recommendations in bullet form with bold title
-        val recommendationTitle = Paragraph("Recommendations:")
-            .setFontSize(14f)
-            .setBold()
-        document.add(recommendationTitle)
 
-        val recommendationsList = List() // Use iText's List constructor
+        // Severity
+        var severityPercent = String()
+        if (severity == "Mild") {
+            severityPercent = "60%-80% (Mild Cases)"
+        } else if (severity == "Moderate") {
+            severityPercent = "80%-90% (Moderate Signs Detected- Immediate Attention Required)"
+        } else {
+            severityPercent = "90-98% (Severe cases- Urgent Checkup Needed)"
+        }
+        document.add(Paragraph(severityPercent).setBold().setMarginTop(30f))
+
+        // Eye Detection intro
+        var eyeDetectIntro = ""
+        if (severity == "Mild") {
+            eyeDetectIntro = "• The system has detected mild indications of $className"
+        } else if (severity == "Moderate") {
+            eyeDetectIntro =
+                "• A moderate level of $className is detected. This may indicate an increased risk of progression."
+        } else {
+            eyeDetectIntro =
+                "• A significant presence of $className is detected. Immediate medical attention is strongly recommended."
+        }
+        val paragraphEyeDetectIntro = Paragraph(eyeDetectIntro)
+        paragraphEyeDetectIntro.setMarginLeft(16f)
+        paragraphEyeDetectIntro.setMarginTop(8f)
+        paragraphEyeDetectIntro.setBold()
+        document.add(paragraphEyeDetectIntro)
+
+        // Recommendation
+        var recommendation = ""
+        if (severity == "Mild") {
+            recommendation = "• Recommendations:"
+        } else if (severity == "Moderate") {
+            recommendation = "• Must-Do Actions:"
+        } else {
+            recommendation = "• Action Plan:"
+        }
+        val paragraphRecommendation = Paragraph(recommendation)
+        paragraphRecommendation.setMarginLeft(16f)
+        paragraphRecommendation.setBold()
+        document.add(paragraphRecommendation)
+
+        val recommendationInfoLists = List() // Use iText's List constructor
             .setSymbolIndent(12f)
             .setListSymbol("\u2022") // Bullet symbol
-        var recommendations = listOf<String>()
-        if(className == "Cataract"){
-            recommendations = listOf(
-                "Consult an Ophthalmologist: Schedule a comprehensive eye examination with an ophthalmologist as soon as possible.",
-                "Visual Acuity Test: A professional eye doctor will determine the extent of the cataract's impact on your vision.",
-                "Further Examination: The doctor will perform a slit-lamp examination and other relevant tests.",
-                "Treatment Options: Discuss treatment options, including cataract surgery, with your ophthalmologist.",
-                "Protect your eyes: Wear sunglasses to protect your eyes from UV light."
+        var recommendationInfo = listOf<String>()
+        if (severity == "Mild") {
+            recommendationInfo = listOf(
+                "Maintain a healthy lifestyle and proper eye hygiene.",
+                "Regular eye exercises and protective eyewear may help slow progression.",
+                "Monitor symptoms for any noticeable changes, such as blurry vision or discomfort.",
+                "Follow-up: Consider scheduling an eye checkup within 6-12 months for further evaluation."
             )
-        }else if(className == "Glaucoma"){
-            recommendations = listOf(
-                "Urgent Ophthalmologist Consultation: Schedule an immediate appointment with an ophthalmologist.",
-                "Intraocular Pressure (IOP) Measurement: The doctor will measure the pressure inside your eye.",
-                "Visual Field Testing: This test will assess your peripheral vision.",
-                "Optic Nerve Evaluation: The doctor will examine the optic nerve for signs of damage.",
-                "Follow-up Care: Regular monitoring and treatment are crucial to prevent vision loss."
+        } else if (severity == "Moderate") {
+            recommendationInfo = listOf(
+                "Consult an optometrist as soon as possible for a more detailed evaluation.",
+                "Adjust your screen time and ensure proper eye rest.",
+                "Avoid prolonged exposure to bright lights or screens.",
+                "Implement a diet rich in Vitamin A (e.g., carrots, leafy greens, and fish).",
+                "Follow-up: A professional consultation is advised within 1-3 months."
+            )
+        } else {
+            recommendationInfo = listOf(
+                "Schedule an urgent appointment with an ophthalmologist for a comprehensive eye exam.",
+                "Possible medical or surgical intervention may be required, depending on severity.",
+                "Avoid self-medication and over-the-counter eye drops without professional advice.",
+                "Follow-up: Seek medical attention within 1-2 weeks to prevent further vision impairment."
             )
         }
-        recommendations.forEach { recommendation ->
-            val bulletPoint = "• $recommendation"
-            val paragraph = Paragraph(bulletPoint)
+
+        recommendationInfo.forEach { info ->
+            val bulletPoint = "o $info"
+            val paragraph = Paragraph(bulletPoint).setMarginLeft(32f)
             document.add(paragraph)
         }
-        document.add(recommendationsList)
+        document.add(recommendationInfoLists)
 
+        // General eye tips
+        val generalEyeTips = "• General Eye Care Tips"
+        document.add(Paragraph(generalEyeTips).setBold().setMarginLeft(16f))
 
-        val additionalInfoTitle = Paragraph("Additional Information:")
-            .setFontSize(14f)
-            .setBold()
-        document.add(additionalInfoTitle)
-
-        val additionalInfoLists = List() // Use iText's List constructor
+        val eyeTipLists = List() // Use iText's List constructor
             .setSymbolIndent(12f)
             .setListSymbol("\u2022") // Bullet symbol
-        var additionalInfo = listOf<String>()
-        if(className == "Cataract"){
-            additionalInfo = listOf(
-                "Symptoms: Common symptoms include cloudy vision, glare, halos around lights, and difficulty seeing at night.",
-                "Risk Factors: Age, diabetes, smoking, and prolonged sun exposure are risk factors.",
-                "Importance of Early Detection: Early detection and treatment can help prevent significant vision loss.",
-            )
-        }else if(className == "Glaucoma"){
-            additionalInfo = listOf(
-                "Types of Glaucoma: Open-angle glaucoma and angle-closure glaucoma are the most common types.",
-                "Symptoms: In early stages, glaucoma often has no symptoms. Peripheral vision loss is a common symptom in later stages.",
-                "Risk Factors: Age, family history, and certain medical conditions increase the risk.",
-                "Importance of Regular Screening: Early detection and treatment can prevent irreversible vision loss.",
-            )
-        }
-        additionalInfo.forEach { info ->
-            val bulletPoint = "• $info"
-            val paragraph = Paragraph(bulletPoint)
+        var eyeTips = listOf<String>()
+        eyeTips = listOf(
+            "Stay hydrated and maintain a balanced diet.",
+            "Avoid excessive screen time; use blue-light filters if needed.",
+            "Wear UV-protection sunglasses when outdoors.",
+            "Ensure proper lighting while reading or using digital devices.",
+            "Get regular eye exams even if no symptoms are present."
+        )
+        eyeTips.forEach { info ->
+            val bulletPoint = "✔ $info"
+            val paragraph = Paragraph(bulletPoint).setMarginLeft(32f)
             document.add(paragraph)
         }
-        document.add(additionalInfoLists)
+        document.add(eyeTipLists)
 
-        val disclaimerTitle = Paragraph("Disclaimer:")
-            .setFontSize(14f)
-            .setBold()
-        document.add(disclaimerTitle)
 
-        val disclaimer = Paragraph("This scan is a screening tool and does not provide a definitive diagnosis. A comprehensive eye examination by an ophthalmologist is essential for accurate diagnosis and treatment.")
-            .setFontSize(12f)
+        val disclaimer =
+            Paragraph("Note: This report is an initial assessment based on Application analysis. A professional consultation is necessary for an accurate diagnosis and treatment plan.")
         document.add(disclaimer)
+
+        val clinicTitle =
+            Paragraph("Nearest Eye Clinic Recommendation:").setBold().setMarginTop(15f)
+        document.add(clinicTitle)
+
+        var firstClinic = listOf<String>()
+        firstClinic = listOf(
+            "Gueco Optical",
+            "Rizal St, Poblacion, Gerona, 2302 Tarlac",
+            "(045) 925 0303",
+        )
+        firstClinic.forEachIndexed { index, info ->
+            val paragraph = Paragraph(info)
+            if (index == 0) {
+                paragraph.setMarginTop(15f)
+            }
+            document.add(paragraph)
+        }
+
+        var secondClinic = listOf<String>()
+        secondClinic = listOf(
+            "Chu Eye Center, ENT & Optical Clinic",
+            "M.H. Del Pilar St, Paniqui, 2307 Tarlac",
+            "(045) 470 8260",
+        )
+        secondClinic.forEachIndexed { index, info ->
+            val paragraph = Paragraph(info)
+            if (index == 0) {
+                paragraph.setMarginTop(15f)
+            }
+            document.add(paragraph)
+        }
+
+        var thirdClinic = listOf<String>()
+        thirdClinic = listOf(
+            "Uycoco Optical Clinic",
+            "127 Burgos St, Paniqui, 2307 Tarlac",
+            "0933-856-1668",
+        )
+        thirdClinic.forEachIndexed { index, info ->
+            val paragraph = Paragraph(info)
+            if (index == 0) {
+                paragraph.setMarginTop(15f)
+            }
+            document.add(paragraph)
+        }
 
         document.close()
 
