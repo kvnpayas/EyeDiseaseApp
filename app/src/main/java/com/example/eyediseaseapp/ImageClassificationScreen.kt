@@ -153,6 +153,7 @@ fun ImageClassificationScreen(navController: NavController) {
                 } else {
                     tempBitmap?.copy(Bitmap.Config.ARGB_8888, true)
                 }
+                bitmap = tempBitmap
             } catch (e: IOException) {
                 Log.e("ImageClassificationScreen", "Error decoding bitmap", e)
             }
@@ -160,13 +161,27 @@ fun ImageClassificationScreen(navController: NavController) {
             // Simulate processing delay (you can adjust or remove this)
             delay(5000)
 
-            if (bitmap != null) {
+            if (tempBitmap != null) {
                 val ultralyticsResults = ultralyticsAPIHelper.classifyImage(bitmap!!)
                 Log.d("ultralyticsResults", "ultralyticsResults: $ultralyticsResults")
                 detections = ultralyticsResults
 //                results = imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
                 if (detections.isNotEmpty()) {
-                    // Find the best confidence (optional, if you want to highlight one)
+                    val mutableBitmap = tempBitmap.copy(Bitmap.Config.ARGB_8888, true)
+                    val canvas = android.graphics.Canvas(mutableBitmap)
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.RED // Choose your desired color
+                        style = android.graphics.Paint.Style.STROKE
+                        strokeWidth = 5f // Adjust the stroke width as needed
+                    }
+
+                    detections.forEach { detection ->
+                        val box = detection.box
+                        val rect = android.graphics.RectF(box.x1, box.y1, box.x2, box.y2)
+                        canvas.drawRect(rect, paint)
+                    }
+                    bitmap = mutableBitmap
+
                     var bestConf = 0f
                     var bestIndex = -1
                     detections.forEachIndexed { index, detection ->

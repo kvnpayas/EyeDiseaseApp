@@ -112,7 +112,7 @@ class UltralyticsAPIHelper(private val context: Context) {
             val modelPart =
                 MultipartBody.Part.createFormData(
                     "model",
-                    "https://hub.ultralytics.com/models/KgnTTMy0x3ZyCCxmm70c"
+                    "https://hub.ultralytics.com/models/mIm9o2cOW7aE652yWuB3"
                 )
             val imgszPart = MultipartBody.Part.createFormData("imgsz", "640")
             val confPart =
