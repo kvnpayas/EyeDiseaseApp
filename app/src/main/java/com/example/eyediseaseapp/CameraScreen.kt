@@ -286,12 +286,29 @@ fun CameraView() {
                                 Log.d("result", "Results before Ultralytics")
                                 delay(1000)
 
-                                val ultralyticsResults = ultralyticsAPIHelper.classifyImage(rotatedBitmap)
+                                val ultralyticsResults =
+                                    ultralyticsAPIHelper.classifyImage(rotatedBitmap)
                                 detections = ultralyticsResults // Update detections
                                 Log.d("result", "Detections from Ultralytics: $detections")
 
                                 if (detections.isNotEmpty()) {
                                     // Find the best confidence (optional, if you want to highlight one)
+                                    val mutableBitmap =
+                                        rotatedBitmap.copy(Bitmap.Config.ARGB_8888, true)
+                                    val canvas = android.graphics.Canvas(mutableBitmap)
+                                    val paint = Paint().apply {
+                                        color =
+                                            android.graphics.Color.RED // Choose your desired color
+                                        style = Paint.Style.STROKE
+                                        strokeWidth = 5f // Adjust the stroke width as needed
+                                    }
+
+                                    detections.forEach { detection ->
+                                        val box = detection.box
+                                        val rect = RectF(box.x1, box.y1, box.x2, box.y2)
+                                        canvas.drawRect(rect, paint)
+                                    }
+                                    capturedImageBitmap = mutableBitmap
                                     var bestConf = 0f
                                     var bestIndex = -1
                                     detections.forEachIndexed { index, detection ->
@@ -312,7 +329,11 @@ fun CameraView() {
                                 }
 
                             } catch (e: Exception) {
-                                Log.e("CameraView", "Error processing image with Ultralytics: ${e.message}", e)
+                                Log.e(
+                                    "CameraView",
+                                    "Error processing image with Ultralytics: ${e.message}",
+                                    e
+                                )
                             } finally {
                                 isLoading = false
                             }
@@ -490,40 +511,30 @@ fun CameraView() {
                         }
                     }
                     if (initState) {
-                        if (results.isEmpty()) { // Check if no face is detected
-                            Text(
-                                text = "No Eye Detected",
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .padding(top = 5.dp),
-                                color = Color.Red,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } else { // Face detected, show capture button
-                            IconButton(
 
-                                onClick = {
-                                    Log.d("CameraView", "IconButton clicked")
-                                    Log.d("CameraView", "captureImage: $imageCapture")
-                                    takePicture()
-                                    initState = false
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .padding(top = 5.dp)
-                                    .size(80.dp)
-                                    .zIndex(1f)
-                                    .border(4.dp, Color.White, CircleShape)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.baseline_camera_alt_24),
-                                    contentDescription = "Take picture",
-                                    modifier = Modifier.fillMaxSize(),
-                                    tint = Color.White
-                                )
-                            }
+                        IconButton(
+
+                            onClick = {
+                                Log.d("CameraView", "IconButton clicked")
+                                Log.d("CameraView", "captureImage: $imageCapture")
+                                takePicture()
+                                initState = false
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(top = 5.dp)
+                                .size(80.dp)
+                                .zIndex(1f)
+                                .border(4.dp, Color.White, CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.baseline_camera_alt_24),
+                                contentDescription = "Take picture",
+                                modifier = Modifier.fillMaxSize(),
+                                tint = Color.White
+                            )
                         }
+
                     }
                     if (capturedImageBitmap != null) {
                         if (!isLoading) {
