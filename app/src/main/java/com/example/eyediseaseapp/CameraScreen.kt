@@ -97,7 +97,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.LineBreak.Companion.Paragraph
 import androidx.compose.ui.zIndex
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
+import com.example.eyediseaseapp.util.DetectionResult
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.example.eyediseaseapp.util.UltralyticsAPIHelper
 import com.example.eyediseaseapp.util.generatePdf
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
@@ -175,7 +177,7 @@ fun CameraView() {
 
     var showRecaptureButton by remember { mutableStateOf(false) }
 
-    val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+    val classLabels = listOf("Cataract", "Glaucoma", "Normal")
 
     var faceBoundingBoxes by remember { mutableStateOf<List<RectF>>(emptyList()) } // State to hold bounding boxes
     val imageAspectRatio = 4f / 3f // Default aspect ratio, adjust if needed
@@ -185,6 +187,9 @@ fun CameraView() {
     var lastBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var lastLeftEyeBox by remember { mutableStateOf<RectF?>(null) }
     var lastRightEyeBox by remember { mutableStateOf<RectF?>(null) }
+
+    val ultralyticsAPIHelper = remember { UltralyticsAPIHelper(context) }
+    var detections by remember { mutableStateOf<List<DetectionResult>>(emptyList()) }
 
     val imageClassifierHelper = remember {
         try {
@@ -251,26 +256,63 @@ fun CameraView() {
                         bestConfidence = 0f
                         results = emptyList()
 
+//                        coroutineScope.launch {
+//                            try {
+//                                capturedImageBitmap = rotatedBitmap
+//                                Log.d("result", "Resukls: $results")
+//                                delay(5000) // Simulate processing delay
+//
+//                                if (imageClassifierHelper != null) {
+//                                    val classificationResults =
+//                                        imageClassifierHelper.classifyImage(rotatedBitmap)
+//                                    results = classificationResults
+//                                    bestClassIndex = classificationResults.indexOf(
+//                                        classificationResults.maxOrNull() ?: 0f
+//                                    )
+//                                    bestConfidence = classificationResults.maxOrNull() ?: 0f
+//                                } else {
+//                                    Log.e("CameraView", "ImageClassifierHelper is null")
+//                                }
+//
+//                            } catch (e: Exception) {
+//                                Log.e("CameraView", "Error processing image: ${e.message}", e)
+//                            } finally {
+//                                isLoading = false
+//                            }
+//                        }
                         coroutineScope.launch {
                             try {
                                 capturedImageBitmap = rotatedBitmap
-                                Log.d("result", "Resukls: $results")
-                                delay(5000) // Simulate processing delay
+                                Log.d("result", "Results before Ultralytics")
+                                delay(1000)
 
-                                if (imageClassifierHelper != null) {
-                                    val classificationResults =
-                                        imageClassifierHelper.classifyImage(rotatedBitmap)
-                                    results = classificationResults
-                                    bestClassIndex = classificationResults.indexOf(
-                                        classificationResults.maxOrNull() ?: 0f
-                                    )
-                                    bestConfidence = classificationResults.maxOrNull() ?: 0f
+                                val ultralyticsResults = ultralyticsAPIHelper.classifyImage(rotatedBitmap)
+                                detections = ultralyticsResults // Update detections
+                                Log.d("result", "Detections from Ultralytics: $detections")
+
+                                if (detections.isNotEmpty()) {
+                                    // Find the best confidence (optional, if you want to highlight one)
+                                    var bestConf = 0f
+                                    var bestIndex = -1
+                                    detections.forEachIndexed { index, detection ->
+                                        if (detection.confidence > bestConf) {
+                                            val detect = detection.confidence
+                                            Log.d("detections", "Detections Confidence: $detect")
+                                            bestConf = detection.confidence
+                                            bestIndex = index
+                                        }
+                                    }
+                                    bestConfidence = bestConf
+                                    bestClassIndex = detections.getOrNull(bestIndex)?.classId ?: -1
+                                    Log.d("detections", "Detections Best Class: $bestClassIndex")
+                                    Log.d("detections", "Detections index: $bestIndex")
                                 } else {
-                                    Log.e("CameraView", "ImageClassifierHelper is null")
+                                    bestConfidence = 0f
+                                    bestClassIndex = -1
                                 }
 
                             } catch (e: Exception) {
-                                Log.e("CameraView", "Error processing image: ${e.message}", e)
+                                Log.e("CameraView", "Error processing image with Ultralytics: ${e.message}", e)
                             } finally {
                                 isLoading = false
                             }
@@ -290,6 +332,8 @@ fun CameraView() {
             Log.e("CameraView", "imageCapture is null, cannot take picture.")
         }
     }
+
+
     Box(modifier = Modifier.fillMaxSize()) { // Use Box to overlay content
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -522,7 +566,7 @@ fun CameraView() {
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     val className: String
-                                    if (bestConfidence * 100 < 90) {
+                                    if (bestConfidence * 100 < 25) {
                                         className = "Unknown"
                                     } else {
                                         className =
@@ -537,7 +581,7 @@ fun CameraView() {
                                         fontWeight = FontWeight.Bold,
                                         color = colorResource(id = R.color.darkPrimary)
                                     )
-                                    if (bestConfidence * 100 > 90) {
+                                    if (bestConfidence * 100 > 25) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = "Confidence: $formattedConfidence%",
@@ -545,7 +589,7 @@ fun CameraView() {
                                             color = Color.Gray
                                         )
                                     }
-                                    if (bestConfidence * 100 > 90) {
+                                    if (bestConfidence * 100 > 25) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Button(
                                             modifier = Modifier

@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
+import com.example.eyediseaseapp.util.DetectionResult
 import com.example.eyediseaseapp.util.ImageClassifierHelper
 import com.example.eyediseaseapp.util.UltralyticsAPIHelper
 import com.example.eyediseaseapp.util.generatePdf
@@ -91,8 +92,9 @@ fun ImageClassificationScreen(navController: NavController) {
     }
 
     val ultralyticsAPIHelper = remember {
-        UltralyticsAPIHelper()
+        UltralyticsAPIHelper(context)
     }
+    var detections by remember { mutableStateOf<List<DetectionResult>>(emptyList()) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -101,20 +103,23 @@ fun ImageClassificationScreen(navController: NavController) {
     }
 
     fun getResultMessage(resultIndex: Int, confidence: Float): String {
+        Log.d("detections", "Detections resultIndex: $resultIndex")
+        Log.d("detections", "Detections Confidence: $confidence")
         val formattedConfidence = String.format("%.2f", confidence * 100)
-        val classLabels = listOf("Normal", "Cataract", "Glaucoma")
+        val classLabels = listOf("Cataract", "Glaucoma", "Normal")
         val className: String
 
-        if (confidence * 100 < 90) {
+        if (confidence * 100 < 60) {
             className = "Unknown"
         } else {
             className = classLabels.getOrNull(resultIndex) ?: "Unknown"
         }
 
         return when (className) {
-            "Normal" -> "Normal"
             "Cataract" -> "Cataract"
             "Glaucoma" -> "Glaucoma"
+            "Normal" -> "Normal"
+
             else -> className
         }
     }
@@ -132,9 +137,15 @@ fun ImageClassificationScreen(navController: NavController) {
             try {
                 if (Build.VERSION.SDK_INT < 28) {
                     tempBitmap =
-                        MediaStore.Images.Media.getBitmap(context.contentResolver, currentImageUri) // Use the local copy
+                        MediaStore.Images.Media.getBitmap(
+                            context.contentResolver,
+                            currentImageUri
+                        ) // Use the local copy
                 } else {
-                    val source = ImageDecoder.createSource(context.contentResolver, currentImageUri) // Use the local copy
+                    val source = ImageDecoder.createSource(
+                        context.contentResolver,
+                        currentImageUri
+                    ) // Use the local copy
                     tempBitmap = ImageDecoder.decodeBitmap(source)
                 }
                 bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -150,11 +161,33 @@ fun ImageClassificationScreen(navController: NavController) {
             delay(5000)
 
             if (bitmap != null) {
-                results = imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
-                if (results.isNotEmpty()) {
-                    bestClassIndex = results.indexOf(results.maxOrNull() ?: 0f)
-                    bestConfidence = results.maxOrNull() ?: 0f
+                val ultralyticsResults = ultralyticsAPIHelper.classifyImage(bitmap!!)
+                Log.d("ultralyticsResults", "ultralyticsResults: $ultralyticsResults")
+                detections = ultralyticsResults
+//                results = imageClassifierHelper?.classifyImage(bitmap!!) ?: emptyList()
+                if (detections.isNotEmpty()) {
+                    // Find the best confidence (optional, if you want to highlight one)
+                    var bestConf = 0f
+                    var bestIndex = -1
+                    detections.forEachIndexed { index, detection ->
+                        if (detection.confidence > bestConf) {
+                            val detect = detection.confidence
+                            Log.d("detections", "Detections Confidence: $detect")
+                            bestConf = detection.confidence
+                            bestIndex = index
+                        }
+                    }
+                    bestConfidence = bestConf
+                    bestClassIndex = detections.getOrNull(bestIndex)?.classId ?: -1
+                } else {
+                    bestConfidence = 0f
+                    bestClassIndex = -1
                 }
+//                Log.d("imageClassifierHelper", "imageClassifierHelper: $results")
+//                if (results.isNotEmpty()) {
+//                    bestClassIndex = results.indexOf(results.maxOrNull() ?: 0f)
+//                    bestConfidence = results.maxOrNull() ?: 0f
+//                }
             }
             isLoading = false
         }
@@ -262,7 +295,8 @@ fun ImageClassificationScreen(navController: NavController) {
                             Image(
                                 bitmap = it.asImageBitmap(),
                                 contentDescription = "Upload Image",
-                                modifier = Modifier.size(250.dp)
+                                modifier = Modifier
+                                    .size(250.dp)
                                     .border(
                                         width = 1.dp,
                                         color = colorResource(id = R.color.darkPrimary),
@@ -279,13 +313,14 @@ fun ImageClassificationScreen(navController: NavController) {
                         val resultMessage = getResultMessage(bestClassIndex, bestConfidence)
                         val confidence = String.format("%.2f", bestConfidence * 100)
                         Box(
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
                                 .background(
                                     color = colorResource(id = R.color.extraLightPrimary),
                                     shape = RoundedCornerShape(8.dp)
                                 )
                         ) {
-                            Column (
+                            Column(
                                 modifier = Modifier
                                     .padding(16.dp)
                                     .fillMaxWidth(),
@@ -303,7 +338,7 @@ fun ImageClassificationScreen(navController: NavController) {
                                     style = TextStyle(fontWeight = FontWeight.ExtraBold),
                                 )
 
-                                if(bestConfidence * 100 > 90) {
+                                if (bestConfidence * 100 > 60) {
                                     Spacer(modifier = Modifier.padding(2.dp))
                                     Text(
                                         text = "Confidence: $confidence%",
@@ -312,7 +347,7 @@ fun ImageClassificationScreen(navController: NavController) {
                                     )
                                 }
                                 Spacer(modifier = Modifier.padding(10.dp))
-                                if(resultMessage == "Cataract" || resultMessage == "Glaucoma"){
+                                if (resultMessage == "Cataract" || resultMessage == "Glaucoma") {
                                     Text(
                                         text = "For further evaluation, consult an ophthalmologist. Here are suggested clinics:",
                                         color = colorResource(id = R.color.darkPrimary),
@@ -393,85 +428,92 @@ fun ImageClassificationScreen(navController: NavController) {
                                         color = colorResource(id = R.color.darkPrimary),
                                         fontSize = 16.sp,
                                     )
-                                }else if(resultMessage == "Normal"){
+                                } else if (resultMessage == "Normal") {
                                     Text(
                                         text = "If you are experiencing any eye discomfort, vision changes, or have any concerns about your eye health, it is always recommended to consult with a qualified ophthalmologist for a comprehensive eye examination.",
                                         color = colorResource(id = R.color.darkPrimary),
                                         fontSize = 14.sp,
                                     )
-                                }else{
+                                } else {
                                     Text(
                                         text = "The uploaded image could not be clearly classified. This may be due to image quality, variations in eye appearance, or limitations in the analysis model. It is essential to consult an ophthalmologist for a thorough eye examination and diagnosis.",
                                         color = colorResource(id = R.color.darkPrimary),
                                         fontSize = 14.sp,
                                     )
                                 }
-                                // I want to add select mild moderate orr severe here
 
-                                if(bestConfidence * 100 > 90) {
-                                    Spacer(modifier = Modifier.height(32.dp))
-                                    // Add mild, moderate, or severe selection here
-                                    var severity by remember { mutableStateOf("Mild") } // Default to mild
+                                Spacer(modifier = Modifier.height(32.dp))
+                                if (resultMessage == "Cataract" || resultMessage == "Glaucoma") {
+                                    if (bestConfidence * 100 > 60) {
 
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                        // Add mild, moderate, or severe selection here
+                                        var severity by remember { mutableStateOf("Mild") } // Default to mild
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceEvenly
-                                    ) {
-                                        OutlinedButton(
-                                            onClick = { severity = "Mild" },
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                containerColor = if (severity == "Mild") colorResource(id = R.color.darkPrimary) else Color.Transparent,
-                                                contentColor = if (severity == "Mild") Color.White else Color.Black
-                                            ),
-                                            border = BorderStroke(1.dp, Color.Gray)
+                                        Spacer(modifier = Modifier.height(16.dp))
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceEvenly
                                         ) {
-                                            Text("Mild")
+                                            OutlinedButton(
+                                                onClick = { severity = "Mild" },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    containerColor = if (severity == "Mild") colorResource(
+                                                        id = R.color.darkPrimary
+                                                    ) else Color.Transparent,
+                                                    contentColor = if (severity == "Mild") Color.White else Color.Black
+                                                ),
+                                                border = BorderStroke(1.dp, Color.Gray)
+                                            ) {
+                                                Text("Mild")
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = { severity = "Moderate" },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    containerColor = if (severity == "Moderate") colorResource(
+                                                        id = R.color.darkPrimary
+                                                    ) else Color.Transparent,
+                                                    contentColor = if (severity == "Moderate") Color.White else Color.Black
+                                                ),
+                                                border = BorderStroke(1.dp, Color.Gray)
+                                            ) {
+                                                Text("Moderate")
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = { severity = "Severe" },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    containerColor = if (severity == "Severe") colorResource(
+                                                        id = R.color.darkPrimary
+                                                    ) else Color.Transparent,
+                                                    contentColor = if (severity == "Severe") Color.White else Color.Black
+                                                ),
+                                                border = BorderStroke(1.dp, Color.Gray)
+                                            ) {
+                                                Text("Severe")
+                                            }
                                         }
 
-                                        OutlinedButton(
-                                            onClick = { severity = "Moderate" },
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                containerColor = if (severity == "Moderate") colorResource(id = R.color.darkPrimary) else Color.Transparent,
-                                                contentColor = if (severity == "Moderate") Color.White else Color.Black
-                                            ),
-                                            border = BorderStroke(1.dp, Color.Gray)
+
+                                        Spacer(modifier = Modifier.height(32.dp))
+                                        Button(
+                                            onClick = {
+                                                generatePdf(
+                                                    context,
+                                                    bitmap,
+                                                    resultMessage,
+                                                    bestConfidence,
+                                                    severity
+                                                )
+                                            },
+                                            modifier = Modifier.align(Alignment.CenterHorizontally)
                                         ) {
-                                            Text("Moderate")
+                                            Text("Download PDF")
                                         }
-
-                                        OutlinedButton(
-                                            onClick = { severity = "Severe" },
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                containerColor = if (severity == "Severe") colorResource(id = R.color.darkPrimary) else Color.Transparent,
-                                                contentColor = if (severity == "Severe") Color.White else Color.Black
-                                            ),
-                                            border = BorderStroke(1.dp, Color.Gray)
-                                        ) {
-                                            Text("Severe")
-                                        }
-                                    }
-
-
-                                    Spacer(modifier = Modifier.height(32.dp))
-                                    Button(
-                                        onClick = {
-                                            generatePdf(
-                                                context,
-                                                bitmap,
-                                                resultMessage,
-                                                bestConfidence,
-                                                severity
-                                            )
-                                        },
-                                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                                    ) {
-                                        Text("Download PDF")
                                     }
                                 }
                             }
-
                         }
                     } else if (isLoading) {
                         Text(text = "Loading...")
