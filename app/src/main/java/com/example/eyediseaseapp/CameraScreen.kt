@@ -87,6 +87,7 @@ import java.util.concurrent.Executors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
@@ -481,6 +482,16 @@ fun CameraView() {
                                 modifier = Modifier.fillMaxSize()
                             )
 
+                            Image(
+                                painter = painterResource(id = R.drawable.eye_guide),
+                                contentDescription = "Eye positioning guide",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp)
+                                    .alpha(0.7f),
+                                contentScale = ContentScale.Fit
+                            )
+
                             AndroidView(
                                 { overlayView },
                                 modifier = Modifier.fillMaxSize()
@@ -494,7 +505,8 @@ fun CameraView() {
                                         Image(
                                             bitmap = bitmap.asImageBitmap(),
                                             contentDescription = "Captured Image",
-                                            modifier = Modifier.fillMaxSize()
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Fit
                                         )
                                     }
                                 }
