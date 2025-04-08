@@ -204,9 +204,9 @@ fun CameraView() {
             null
         }
     }
-    val localContext = LocalContext.current // Use a different name for the context variable
+    val localContext = LocalContext.current
     val overlayView = remember {
-        OverlayView(localContext, null).apply { // Use the new variable name
+        OverlayView(localContext, null).apply {
             layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
     }
@@ -356,7 +356,7 @@ fun CameraView() {
     }
 
 
-    Box(modifier = Modifier.fillMaxSize()) { // Use Box to overlay content
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
