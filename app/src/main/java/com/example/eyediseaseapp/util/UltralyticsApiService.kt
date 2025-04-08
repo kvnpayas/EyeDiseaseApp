@@ -102,7 +102,6 @@ class UltralyticsAPIHelper(private val context: Context) {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
             val byteArray = stream.toByteArray()
 
-
             val requestFile = byteArray.toRequestBody("image/jpeg".toMediaTypeOrNull())
             val imagePart = MultipartBody.Part.createFormData(
                 "file",
@@ -112,7 +111,7 @@ class UltralyticsAPIHelper(private val context: Context) {
             val modelPart =
                 MultipartBody.Part.createFormData(
                     "model",
-                    "https://hub.ultralytics.com/models/mIm9o2cOW7aE652yWuB3"
+                    "https://hub.ultralytics.com/models/2MI9L4PD0ozKgixXhXEp"
                 )
             val imgszPart = MultipartBody.Part.createFormData("imgsz", "640")
             val confPart =

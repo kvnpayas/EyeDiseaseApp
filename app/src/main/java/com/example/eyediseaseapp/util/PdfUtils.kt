@@ -27,7 +27,6 @@ fun generatePdf(
     imageBitmap: Bitmap?,
     className: String,
     confidence: Float,
-    severity: String
 ) {
     val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
     val filePath = File(
@@ -87,27 +86,27 @@ fun generatePdf(
 
 
         // Severity
-        var severityPercent = String()
-        if (severity == "Mild") {
-            severityPercent = "60%-80% (Mild Cases)"
-        } else if (severity == "Moderate") {
-            severityPercent = "80%-90% (Moderate Signs Detected- Immediate Attention Required)"
-        } else {
-            severityPercent = "90-98% (Severe cases- Urgent Checkup Needed)"
-        }
-        document.add(Paragraph(severityPercent).setBold().setMarginTop(30f))
+//        var severityPercent = String()
+//        if (severity == "Mild") {
+//            severityPercent = "60%-80% (Mild Cases)"
+//        } else if (severity == "Moderate") {
+//            severityPercent = "80%-90% (Moderate Signs Detected- Immediate Attention Required)"
+//        } else {
+//            severityPercent = "90-98% (Severe cases- Urgent Checkup Needed)"
+//        }
+//        document.add(Paragraph(severityPercent).setBold().setMarginTop(30f))
 
         // Eye Detection intro
-        var eyeDetectIntro = ""
-        if (severity == "Mild") {
-            eyeDetectIntro = "• The system has detected mild indications of $className"
-        } else if (severity == "Moderate") {
-            eyeDetectIntro =
-                "• A moderate level of $className is detected. This may indicate an increased risk of progression."
-        } else {
-            eyeDetectIntro =
-                "• A significant presence of $className is detected. Immediate medical attention is strongly recommended."
-        }
+        var eyeDetectIntro = "• The system has detected indications of $className"
+//        if (severity == "Mild") {
+//            eyeDetectIntro = "• The system has detected mild indications of $className\""
+//        } else if (severity == "Moderate") {
+//            eyeDetectIntro =
+//                "• A moderate level of $className is detected. This may indicate an increased risk of progression."
+//        } else {
+//            eyeDetectIntro =
+//                "• A significant presence of $className is detected. Immediate medical attention is strongly recommended."
+//        }
         val paragraphEyeDetectIntro = Paragraph(eyeDetectIntro)
         paragraphEyeDetectIntro.setMarginLeft(16f)
         paragraphEyeDetectIntro.setMarginTop(8f)
@@ -115,14 +114,14 @@ fun generatePdf(
         document.add(paragraphEyeDetectIntro)
 
         // Recommendation
-        var recommendation = ""
-        if (severity == "Mild") {
-            recommendation = "• Recommendations:"
-        } else if (severity == "Moderate") {
-            recommendation = "• Must-Do Actions:"
-        } else {
-            recommendation = "• Action Plan:"
-        }
+        var recommendation = "• Recommendations:"
+//        if (severity == "Mild") {
+//            recommendation = "• Recommendations:"
+//        } else if (severity == "Moderate") {
+//            recommendation = "• Must-Do Actions:"
+//        } else {
+//            recommendation = "• Action Plan:"
+//        }
         val paragraphRecommendation = Paragraph(recommendation)
         paragraphRecommendation.setMarginLeft(16f)
         paragraphRecommendation.setBold()
@@ -132,29 +131,59 @@ fun generatePdf(
             .setSymbolIndent(12f)
             .setListSymbol("\u2022") // Bullet symbol
         var recommendationInfo = listOf<String>()
-        if (severity == "Mild") {
+
+        if (className == "Cataract") {
             recommendationInfo = listOf(
-                "Maintain a healthy lifestyle and proper eye hygiene.",
-                "Regular eye exercises and protective eyewear may help slow progression.",
-                "Monitor symptoms for any noticeable changes, such as blurry vision or discomfort.",
-                "Follow-up: Consider scheduling an eye checkup within 6-12 months for further evaluation."
+                "Schedule regular comprehensive eye exams for early detection and monitoring.",
+                "Protect your eyes from prolonged UV exposure by wearing sunglasses and wide-brimmed hats outdoors.",
+                "Avoid smoking, as it significantly increases the risk of developing cataracts.",
+                "Manage underlying health conditions like diabetes effectively, as they can contribute to cataract formation.",
+                "Maintain a healthy diet rich in antioxidants (e.g., leafy greens, fruits, nuts) which may support lens health.",
+                "Discuss vision changes with your eye care professional; updating eyeglass prescriptions can help manage early symptoms.",
+                "If cataracts interfere with daily activities (reading, driving), consult an ophthalmologist to discuss surgical options."
             )
-        } else if (severity == "Moderate") {
+        }else{
             recommendationInfo = listOf(
-                "Consult an optometrist as soon as possible for a more detailed evaluation.",
-                "Adjust your screen time and ensure proper eye rest.",
-                "Avoid prolonged exposure to bright lights or screens.",
-                "Implement a diet rich in Vitamin A (e.g., carrots, leafy greens, and fish).",
-                "Follow-up: A professional consultation is advised within 1-3 months."
-            )
-        } else {
-            recommendationInfo = listOf(
-                "Schedule an urgent appointment with an ophthalmologist for a comprehensive eye exam.",
-                "Possible medical or surgical intervention may be required, depending on severity.",
-                "Avoid self-medication and over-the-counter eye drops without professional advice.",
-                "Follow-up: Seek medical attention within 1-2 weeks to prevent further vision impairment."
+                "Ensure you understand the specific type and stage of glaucoma diagnosed by discussing it thoroughly with your ophthalmologist.",
+                "Start any prescribed treatment (usually eye drops) immediately and learn the correct technique for administration. Consistency is critical.",
+                "Schedule and commit to all follow-up appointments; regular monitoring of eye pressure and optic nerve health is essential.",
+                "Understand that glaucoma management is typically lifelong. Adherence to treatment is key to preserving your vision.",
+                "Inform your primary care physician and any other specialists about your new glaucoma diagnosis and the medications you've been prescribed.",
+                "Learn about glaucoma and ask your ophthalmologist questions regarding potential side effects, lifestyle adjustments, and prognosis.",
+                "Continue to protect your eyes from significant trauma or injury."
             )
         }
+//        recommendationInfo = listOf(
+//            "Maintain a healthy lifestyle and proper eye hygiene.",
+//            "Consult an optometrist as soon as possible for a more detailed evaluation.",
+//            "Avoid prolonged exposure to bright lights or screens.",
+//            "Adjust your screen time and ensure proper eye rest.",
+//            "Implement a diet rich in Vitamin A (e.g., carrots, leafy greens, and fish).",
+//            "Follow-up: A professional consultation is advised within 1-3 months."
+//        )
+//        if (severity == "Mild") {
+//            recommendationInfo = listOf(
+//                "Maintain a healthy lifestyle and proper eye hygiene.",
+//                "Regular eye exercises and protective eyewear may help slow progression.",
+//                "Monitor symptoms for any noticeable changes, such as blurry vision or discomfort.",
+//                "Follow-up: Consider scheduling an eye checkup within 6-12 months for further evaluation."
+//            )
+//        } else if (severity == "Moderate") {
+//            recommendationInfo = listOf(
+//                "Consult an optometrist as soon as possible for a more detailed evaluation.",
+//                "Adjust your screen time and ensure proper eye rest.",
+//                "Avoid prolonged exposure to bright lights or screens.",
+//                "Implement a diet rich in Vitamin A (e.g., carrots, leafy greens, and fish).",
+//                "Follow-up: A professional consultation is advised within 1-3 months."
+//            )
+//        } else {
+//            recommendationInfo = listOf(
+//                "Schedule an urgent appointment with an ophthalmologist for a comprehensive eye exam.",
+//                "Possible medical or surgical intervention may be required, depending on severity.",
+//                "Avoid self-medication and over-the-counter eye drops without professional advice.",
+//                "Follow-up: Seek medical attention within 1-2 weeks to prevent further vision impairment."
+//            )
+//        }
 
         recommendationInfo.forEach { info ->
             val bulletPoint = "o $info"

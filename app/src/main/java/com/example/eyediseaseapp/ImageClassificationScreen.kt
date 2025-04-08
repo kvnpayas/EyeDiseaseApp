@@ -462,53 +462,53 @@ fun ImageClassificationScreen(navController: NavController) {
                                     if (bestConfidence * 100 > 60) {
 
                                         // Add mild, moderate, or severe selection here
-                                        var severity by remember { mutableStateOf("Mild") } // Default to mild
-
-                                        Spacer(modifier = Modifier.height(16.dp))
-
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceEvenly
-                                        ) {
-                                            OutlinedButton(
-                                                onClick = { severity = "Mild" },
-                                                colors = ButtonDefaults.outlinedButtonColors(
-                                                    containerColor = if (severity == "Mild") colorResource(
-                                                        id = R.color.darkPrimary
-                                                    ) else Color.Transparent,
-                                                    contentColor = if (severity == "Mild") Color.White else Color.Black
-                                                ),
-                                                border = BorderStroke(1.dp, Color.Gray)
-                                            ) {
-                                                Text("Mild")
-                                            }
-
-                                            OutlinedButton(
-                                                onClick = { severity = "Moderate" },
-                                                colors = ButtonDefaults.outlinedButtonColors(
-                                                    containerColor = if (severity == "Moderate") colorResource(
-                                                        id = R.color.darkPrimary
-                                                    ) else Color.Transparent,
-                                                    contentColor = if (severity == "Moderate") Color.White else Color.Black
-                                                ),
-                                                border = BorderStroke(1.dp, Color.Gray)
-                                            ) {
-                                                Text("Moderate")
-                                            }
-
-                                            OutlinedButton(
-                                                onClick = { severity = "Severe" },
-                                                colors = ButtonDefaults.outlinedButtonColors(
-                                                    containerColor = if (severity == "Severe") colorResource(
-                                                        id = R.color.darkPrimary
-                                                    ) else Color.Transparent,
-                                                    contentColor = if (severity == "Severe") Color.White else Color.Black
-                                                ),
-                                                border = BorderStroke(1.dp, Color.Gray)
-                                            ) {
-                                                Text("Severe")
-                                            }
-                                        }
+//                                        var severity by remember { mutableStateOf("Mild") } // Default to mild
+//
+//                                        Spacer(modifier = Modifier.height(16.dp))
+//
+//                                        Row(
+//                                            modifier = Modifier.fillMaxWidth(),
+//                                            horizontalArrangement = Arrangement.SpaceEvenly
+//                                        ) {
+//                                            OutlinedButton(
+//                                                onClick = { severity = "Mild" },
+//                                                colors = ButtonDefaults.outlinedButtonColors(
+//                                                    containerColor = if (severity == "Mild") colorResource(
+//                                                        id = R.color.darkPrimary
+//                                                    ) else Color.Transparent,
+//                                                    contentColor = if (severity == "Mild") Color.White else Color.Black
+//                                                ),
+//                                                border = BorderStroke(1.dp, Color.Gray)
+//                                            ) {
+//                                                Text("Mild")
+//                                            }
+//
+//                                            OutlinedButton(
+//                                                onClick = { severity = "Moderate" },
+//                                                colors = ButtonDefaults.outlinedButtonColors(
+//                                                    containerColor = if (severity == "Moderate") colorResource(
+//                                                        id = R.color.darkPrimary
+//                                                    ) else Color.Transparent,
+//                                                    contentColor = if (severity == "Moderate") Color.White else Color.Black
+//                                                ),
+//                                                border = BorderStroke(1.dp, Color.Gray)
+//                                            ) {
+//                                                Text("Moderate")
+//                                            }
+//
+//                                            OutlinedButton(
+//                                                onClick = { severity = "Severe" },
+//                                                colors = ButtonDefaults.outlinedButtonColors(
+//                                                    containerColor = if (severity == "Severe") colorResource(
+//                                                        id = R.color.darkPrimary
+//                                                    ) else Color.Transparent,
+//                                                    contentColor = if (severity == "Severe") Color.White else Color.Black
+//                                                ),
+//                                                border = BorderStroke(1.dp, Color.Gray)
+//                                            ) {
+//                                                Text("Severe")
+//                                            }
+//                                        }
 
 
                                         Spacer(modifier = Modifier.height(32.dp))
@@ -519,7 +519,6 @@ fun ImageClassificationScreen(navController: NavController) {
                                                     bitmap,
                                                     resultMessage,
                                                     bestConfidence,
-                                                    severity
                                                 )
                                             },
                                             modifier = Modifier.align(Alignment.CenterHorizontally)
