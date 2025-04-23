@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "968940378631",
+    "project_id": "eye-disease-app-f9cab",
+    "storage_bucket": "eye-disease-app-f9cab.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:968940378631:android:3f49aea5a4e1875ec0e8a2",
+        "android_client_info": {
+          "package_name": "com.example.eyediseaseapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "968940378631-3qdou16cjg54h649vtmllv05j580ko4u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.eyediseaseapp",
+            "certificate_hash": "f0dcaf4d2f2c33332b3b6ad9115d02e3bee1bbd1"
+          }
+        },
+        {
+          "client_id": "968940378631-h6i9tu11jsd7dulb892nifujpvhoee8c.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAo4wOVSfQwU-QlUQTty08epwX-wPgCVaA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "968940378631-h6i9tu11jsd7dulb892nifujpvhoee8c.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

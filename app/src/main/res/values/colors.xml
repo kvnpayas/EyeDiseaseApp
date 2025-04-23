@@ -13,4 +13,6 @@
     <color name="extraLightPrimary">#b6e6f9</color>
     <color name="normalPrimary">#0783c1</color>
     <color name="primary">#056cab</color>
+
+    <color name="google_blue">#4285F4</color>
 </resources>

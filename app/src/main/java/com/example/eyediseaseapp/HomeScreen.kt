@@ -34,9 +34,10 @@ import androidx.navigation.NavController
 import androidx.compose.ui.res.colorResource
 import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
+import com.google.firebase.auth.FirebaseAuth
 
 @Composable
-fun HomeScreen(navController: NavController) {
+fun HomeScreen(navController: NavController, modifier: Modifier = Modifier) {
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -121,17 +122,6 @@ fun HomeScreen(navController: NavController) {
                     style = TextStyle(fontWeight = FontWeight.ExtraBold),
                 )
             }
-            Spacer(modifier = Modifier.height(15.dp))
-            Text(
-                modifier = Modifier.clickable {
-                    navController.navigate("aboutUs")
-                },
-                text = "About Us",
-                color = colorResource(id = R.color.darkPrimary),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                style = TextStyle(fontWeight = FontWeight.ExtraBold),
-            )
             Spacer(modifier = Modifier.height(15.dp))
             Text(
                 modifier = Modifier.clickable {

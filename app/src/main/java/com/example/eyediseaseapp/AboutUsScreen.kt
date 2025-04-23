@@ -31,7 +31,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 
 @Composable
-fun AboutUsScreen(navController: NavController) {
+fun AboutUsScreen(navController: NavController, modifier: Modifier = Modifier) {
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
