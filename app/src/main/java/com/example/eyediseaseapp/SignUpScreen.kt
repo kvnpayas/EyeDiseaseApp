@@ -79,12 +79,11 @@ fun SignUpScreen(
     ) {
         // Optional: Add your app logo or image here
         Image(
-            painter = painterResource(id = R.drawable.scan_eye), // Replace with your logo resource
-            contentDescription = "App Logo",
-            colorFilter = ColorFilter.tint(colorResource(id = R.color.darkPrimary)), // Assuming darkPrimary is in colors.xml
+            painter = painterResource(id = R.drawable.eye_logo),
+            contentDescription = "image 1",
             modifier = Modifier
-                .width(80.dp)
-                .height(80.dp),
+                .width(150.dp)
+                .height(150.dp),
             contentScale = ContentScale.Crop
         )
 
