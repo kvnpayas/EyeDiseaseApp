@@ -1,12 +1,9 @@
 package com.example.eyediseaseapp
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,13 +29,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import androidx.compose.ui.res.colorResource
 import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
-import com.google.firebase.auth.FirebaseAuth
 
 @Composable
-fun HomeScreen(navController: NavController, modifier: Modifier = Modifier) {
+fun DoctorHomeScreen(navController: NavController, modifier: Modifier = Modifier) {
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -70,58 +66,32 @@ fun HomeScreen(navController: NavController, modifier: Modifier = Modifier) {
                     style = TextStyle(fontWeight = FontWeight.ExtraBold),
                 )
             }
-            Spacer(modifier = Modifier.height(32.dp))
-            Image(
-                painter = painterResource(id = R.drawable.scan_eye),
-                contentDescription = "image 1",
-                colorFilter = ColorFilter.tint(colorResource(id = R.color.darkPrimary)),
+            Spacer(modifier = Modifier.height(30.dp))
+            Box(
                 modifier = Modifier
-                    .width(80.dp)
-                    .height(80.dp),
+                    .fillMaxWidth()
+                    .padding(15.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Welcome Back!",
+                    color = colorResource(id = R.color.darkPrimary),
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                )
+            }
+            Spacer(modifier = Modifier.height(15.dp))
+            Image(
+                painter = painterResource(id = R.drawable.eye_logo),
+                contentDescription = "image 1",
+                modifier = Modifier
+                    .width(100.dp)
+                    .height(100.dp),
                 contentScale = ContentScale.Crop
             )
-            Spacer(modifier = Modifier.height(32.dp))
-            Button(
-                modifier = Modifier.padding(5.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colorResource(id = R.color.darkPrimary)
-                ),
-                shape = RoundedCornerShape(10.dp),
-                onClick = { navController.navigate("camera") }
-            ) {
-                Text(
-                    text = "SCAN EYE NOW",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Center,
-                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                )
-            }
-            Spacer(modifier = Modifier.height(15.dp))
-            Text(
-                text = "OR",
-                color = Color.DarkGray,
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-                style = TextStyle(fontWeight = FontWeight.ExtraBold),
-            )
-            Spacer(modifier = Modifier.height(15.dp))
-            Button(
-                modifier = Modifier.padding(5.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colorResource(id = R.color.darkPrimary)
-                ),
-                shape = RoundedCornerShape(10.dp),
-                onClick = { navController.navigate(Screen.ImageClassification.route) }
-            ) {
-                Text(
-                    text = "UPLOAD IMAGE",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Center,
-                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                )
-            }
+
+
             Spacer(modifier = Modifier.height(15.dp))
             Text(
                 modifier = Modifier.clickable {
@@ -140,8 +110,8 @@ fun HomeScreen(navController: NavController, modifier: Modifier = Modifier) {
 
 @Preview(showBackground = true)
 @Composable
-fun HomeScreenPreview() {
+fun DoctorHomeScreenPreview() {
     EyeDiseaseAppTheme {
-        HomeScreen(navController = rememberNavController())
+        DoctorHomeScreen(navController = rememberNavController())
     }
 }

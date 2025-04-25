@@ -42,8 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
-import com.example.eyediseaseapp.util.NavigationUtils.createUserDocument
 import com.example.eyediseaseapp.util.NavigationUtils.userDocumentExists
+import com.example.eyediseaseapp.util.UserUtils
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -80,6 +80,8 @@ fun SignInScreen(
 
     // Build a GoogleSignInClient with the options specified by gso.
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
+
+    val userUtils = remember { UserUtils() }
 
     // ActivityResultLauncher for Google Sign-In Intent
     val googleSignInLauncher = rememberLauncherForActivityResult(
@@ -122,7 +124,7 @@ fun SignInScreen(
 
                                                 if (!docExists) {
                                                     println("SignInScreen Debug: Document does not exist, creating...")
-                                                    createUserDocument(userId, userEmail) // <-- Calls utility
+                                                    userUtils.createUserDocument(userId, userEmail) // <-- Calls utility
                                                     println("SignInScreen Debug: Document creation completed.")
                                                 } else {
                                                     println("SignInScreen Debug: Document already exists.")

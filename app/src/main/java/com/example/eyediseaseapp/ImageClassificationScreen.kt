@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,9 +66,11 @@ import androidx.navigation.compose.rememberNavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.DetectionResult
 import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.example.eyediseaseapp.util.ResultRepository
 import com.example.eyediseaseapp.util.UltralyticsAPIHelper
 import com.example.eyediseaseapp.util.generatePdf
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.IOException
 
 @Composable
@@ -101,6 +105,14 @@ fun ImageClassificationScreen(navController: NavController) {
     ) { uri: Uri? ->
         imageUri = uri
     }
+
+//    Cloud Save Val
+    val coroutineScope = rememberCoroutineScope() // Scope for async operations
+    val resultRepository = remember { ResultRepository() } // Instance of your repository
+
+    var isSaving by remember { mutableStateOf(false) } // State for the save operation
+    var saveErrorMessage by remember { mutableStateOf<String?>(null) } // Error message for saving
+    var saveSuccessMessage by remember { mutableStateOf<String?>(null) }
 
     fun getResultMessage(resultIndex: Int, confidence: Float): String {
         Log.d("detections", "Detections resultIndex: $resultIndex")
@@ -461,69 +473,70 @@ fun ImageClassificationScreen(navController: NavController) {
                                 if (resultMessage == "Cataract" || resultMessage == "Glaucoma") {
                                     if (bestConfidence * 100 > 60) {
 
-                                        // Add mild, moderate, or severe selection here
-//                                        var severity by remember { mutableStateOf("Mild") } // Default to mild
-//
-//                                        Spacer(modifier = Modifier.height(16.dp))
-//
-//                                        Row(
-//                                            modifier = Modifier.fillMaxWidth(),
-//                                            horizontalArrangement = Arrangement.SpaceEvenly
-//                                        ) {
-//                                            OutlinedButton(
-//                                                onClick = { severity = "Mild" },
-//                                                colors = ButtonDefaults.outlinedButtonColors(
-//                                                    containerColor = if (severity == "Mild") colorResource(
-//                                                        id = R.color.darkPrimary
-//                                                    ) else Color.Transparent,
-//                                                    contentColor = if (severity == "Mild") Color.White else Color.Black
-//                                                ),
-//                                                border = BorderStroke(1.dp, Color.Gray)
-//                                            ) {
-//                                                Text("Mild")
-//                                            }
-//
-//                                            OutlinedButton(
-//                                                onClick = { severity = "Moderate" },
-//                                                colors = ButtonDefaults.outlinedButtonColors(
-//                                                    containerColor = if (severity == "Moderate") colorResource(
-//                                                        id = R.color.darkPrimary
-//                                                    ) else Color.Transparent,
-//                                                    contentColor = if (severity == "Moderate") Color.White else Color.Black
-//                                                ),
-//                                                border = BorderStroke(1.dp, Color.Gray)
-//                                            ) {
-//                                                Text("Moderate")
-//                                            }
-//
-//                                            OutlinedButton(
-//                                                onClick = { severity = "Severe" },
-//                                                colors = ButtonDefaults.outlinedButtonColors(
-//                                                    containerColor = if (severity == "Severe") colorResource(
-//                                                        id = R.color.darkPrimary
-//                                                    ) else Color.Transparent,
-//                                                    contentColor = if (severity == "Severe") Color.White else Color.Black
-//                                                ),
-//                                                border = BorderStroke(1.dp, Color.Gray)
-//                                            ) {
-//                                                Text("Severe")
-//                                            }
-//                                        }
+                                        // --- Save Result Button ---
+                                        Spacer(modifier = Modifier.height(16.dp)) // Space before button
+                                        // Only show the save button if not already saving and no save status yet
+                                        if (!isSaving && saveErrorMessage == null && saveSuccessMessage == null) {
+                                            Button(
+                                                onClick = {
+                                                    bitmap?.let { bitmapToSave ->
+                                                        isSaving = true
+                                                        saveErrorMessage = null // Clear previous errors
+                                                        saveSuccessMessage = null // Clear previous success
+
+                                                        coroutineScope.launch { // Launch coroutine for saving
+                                                            try {
+                                                                val savedResult = resultRepository.savePatientResult(
+                                                                    bitmap = bitmapToSave,
+                                                                    result = resultMessage,
+                                                                    confidence = bestConfidence.toDouble()
+                                                                    // patientName = patientName // If you have it
+                                                                )
+                                                                println("Save successful: ${savedResult.result} with confidence ${savedResult.confidence}")
+
+                                                                navController.navigate(Screen.ResultHistory.route) {
+                                                                    popUpTo(Screen.AuthCheck.route) { inclusive = true }
+
+
+                                                                    launchSingleTop = true
+                                                                }
+
+
+                                                            } catch (e: Exception) {
+                                                                println("Save failed: ${e.message}")
+                                                                saveErrorMessage = "Failed to save result: ${e.message}" // Still show error on the current screen
+                                                                saveSuccessMessage = null // Ensure success is clear
+                                                                // isSaving will be set to false in finally
+                                                            } finally {
+                                                                isSaving = false // Turn off saving state
+                                                            }
+                                                        } // End coroutine launch
+                                                    } // End bitmap?.let check
+                                                },
+                                                modifier = Modifier.align(Alignment.CenterHorizontally) // Center the button
+                                            ) {
+                                                Text("Save Result")
+                                            }
+                                        } else {
+                                            // Show saving status (Loading, Success, or Error)
+                                            if (isSaving) {
+                                                CircularProgressIndicator()
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text("Saving result...")
+                                            } else if (saveErrorMessage != null) {
+                                                Text("Save Failed: $saveErrorMessage", color = Color.Red) // Use MaterialTheme.colorScheme.error
+                                            } else if (saveSuccessMessage != null) {
+                                                Text("Result Saved!", color = Color.Green) // Use a success color
+                                            }
+                                        }
 
 
                                         Spacer(modifier = Modifier.height(32.dp))
                                         Button(
-                                            onClick = {
-                                                generatePdf(
-                                                    context,
-                                                    bitmap,
-                                                    resultMessage,
-                                                    bestConfidence,
-                                                )
-                                            },
+                                            onClick = { navController.navigate(Screen.ImageClassification.route) },
                                             modifier = Modifier.align(Alignment.CenterHorizontally)
                                         ) {
-                                            Text("Download PDF")
+                                            Text("Exit")
                                         }
                                     }
                                 }

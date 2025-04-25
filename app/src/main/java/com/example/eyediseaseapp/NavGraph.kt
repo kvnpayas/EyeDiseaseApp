@@ -12,20 +12,32 @@ import com.example.eyediseaseapp.util.NavigationUtils.fetchUserRole
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import kotlinx.coroutines.CoroutineScope
 
 sealed class Screen(val route: String) {
-    object AuthCheck : Screen("auth_check") // New: Will check login status
+    object AuthCheck : Screen("auth_check")
     object SignIn : Screen("sign_in")
     object SignUp : Screen("sign_up")
-    object PatientHome : Screen("patient_home") // Renamed your original 'home'
-    object AdminDashboard : Screen("admin_dashboard") // New: For Admins
+    object PatientHome : Screen("patient_home")
+    object DoctorHome : Screen("doctor_home")
     object AboutUs : Screen("about_us")
     object ImageClassification : Screen("image_classification")
     object Camera : Screen("camera")
     object LearnMore : Screen("learn_more")
+    object ResultHistory : Screen("result_history")
+    object PatientLists : Screen("patient_lists")
+    object MessageInbox : Screen("message_inbox")
 
-    // Helper to create routes with arguments if needed later
+    object ConversationsList : Screen("conversations_list")
+    object ConversationDetail : Screen("conversation_detail/{conversationId}") {
+        // Define argument key
+        const val CONVERSATION_ID_KEY = "conversationId"
+        // Helper to create the route with the argument value
+        fun createRoute(conversationId: String) = "conversation_detail/$conversationId"
+    }
+
     fun withArgs(vararg args: String): String {
         return buildString {
             append(route)
@@ -38,62 +50,53 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun NavGraph(navController: NavHostController,
-             drawerState: DrawerState, // <-- Add this parameter
+             drawerState: DrawerState,
              scope: CoroutineScope
 ) {
-    val coroutineScope = rememberCoroutineScope()
+    val localCoroutineScope = rememberCoroutineScope()
+    val currentScope = scope ?: localCoroutineScope
     NavHost(
         navController = navController,
-        // Start at AuthCheck to determine where to go initially
         startDestination = Screen.AuthCheck.route
     ) {
 
 
-        // 1. Authentication Check Screen (The New Start)
         composable(Screen.AuthCheck.route) {
             AuthCheckScreen(navController = navController)
         }
 
-        // 2. Sign In Screen
+
         composable(Screen.SignIn.route) {
-            SignInScreen( // Your SignInScreen Composable
+            SignInScreen(
                 navController = navController,
                 onSignInSuccess = { userId ->
-                    // Login successful, now fetch role and navigate
-                    coroutineScope.launch {
-                        // Show loading indicator if needed (manage state within SignInScreen or hoist)
+                    currentScope.launch {
                         val destinationScreen = fetchUserRole(userId)
-                        val targetRoute = destinationScreen?.route ?: Screen.SignIn.route // Stay on SignIn on failure? Or show error?
+                        val targetRoute = destinationScreen?.route ?: Screen.SignIn.route
                         Log.d("GoogleSignIn", targetRoute)
                         Log.d("GoogleSignIn", "$destinationScreen")
                         if (destinationScreen != null) {
                             navController.navigate(targetRoute) {
-                                // Clear the back stack up to the AuthCheck route (or graph start)
                                 popUpTo(Screen.AuthCheck.route) { inclusive = true }
                                 launchSingleTop = true
                             }
                         } else {
-                            // Handle role fetch failure after login (e.g., show error message in SignInScreen)
                             println("Error: Role fetch failed after successful login for UID: $userId. Staying on SignIn screen.")
-                            // You might want to update an error state in SignInScreen here
                         }
-                        // Hide loading indicator
                     }
                 },
                 onNavigateToSignUp = {
                     navController.navigate(Screen.SignUp.route)
                 }
-                // Add Google Sign in logic here, calling the same onSignInSuccess lambda
             )
         }
 
-        // 3. Sign Up Screen (You'll need to create SignUpScreen.kt)
         composable(Screen.SignUp.route) {
-            SignUpScreen( // Your SignUpScreen Composable
+            SignUpScreen(
                 navController = navController,
                 onSignUpSuccess = { userId ->
                     navController.navigate(Screen.SignIn.route) {
-                        popUpTo(Screen.SignUp.route) { inclusive = true } // Remove SignUp
+                        popUpTo(Screen.SignUp.route) { inclusive = true }
                         launchSingleTop = true
                     }
 
@@ -105,46 +108,56 @@ fun NavGraph(navController: NavHostController,
         }
 
         composable(Screen.PatientHome.route) {
-            // Wrap content in Scaffold
             Scaffold(
                 topBar = {
                     AppBarWithDrawerButton(
-                        title = "Patient Home", // Title for this screen
+                        title = "Patient Home",
                         drawerState = drawerState,
                         scope = scope
                     )
                 }
             ) { paddingValues ->
-                // Your actual HomeScreen content
+
                 HomeScreen(
-                    navController = navController, // Pass navController if needed in HomeScreen
-                    modifier = Modifier.padding(paddingValues) // Apply padding
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
                 )
             }
         }
 
-        // 5. Admin Dashboard Screen (New)
-//        composable(Screen.AdminDashboard.route) {
-//            // Create this Composable for Admin functions
-//            AdminDashboardScreen(navController) // Replace with your Admin screen
-//        }
 
-        // --- Your Existing Screens ---
         composable(Screen.AboutUs.route) {
             AboutUsScreen(navController)
             Scaffold(
                 topBar = {
                     AppBarWithDrawerButton(
-                        title = "About Us", // Title for this screen
+                        title = "About Us",
                         drawerState = drawerState,
                         scope = scope
                     )
                 }
             ) { paddingValues ->
-                // Your actual HomeScreen content
+
                 AboutUsScreen(
-                    navController = navController, // Pass navController if needed in HomeScreen
-                    modifier = Modifier.padding(paddingValues) // Apply padding
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+        }
+        composable(Screen.ResultHistory.route) {
+            ResultHistoryScreen(navController)
+            Scaffold(
+                topBar = {
+                    AppBarWithDrawerButton(
+                        title = "History",
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+            ) { paddingValues ->
+                ResultHistoryScreen(
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
                 )
             }
         }
@@ -152,11 +165,127 @@ fun NavGraph(navController: NavHostController,
             ImageClassificationScreen(navController)
         }
         composable(Screen.Camera.route) {
-            // Consider if CameraScreen needs authentication/role check
             CameraScreen()
         }
         composable(Screen.LearnMore.route) {
             EducationalContentScreen(navController)
+        }
+
+        composable(Screen.DoctorHome.route) {
+            DoctorHomeScreen(navController)
+            Scaffold(
+                topBar = {
+                    AppBarWithDrawerButton(
+                        title = "Doctor Home",
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+            ) { paddingValues ->
+
+                DoctorHomeScreen(
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+        }
+
+        composable(Screen.PatientLists.route) {
+            PatientListsScreen(navController)
+            Scaffold(
+                topBar = {
+                    AppBarWithDrawerButton(
+                        title = "Patient Lists",
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+            ) { paddingValues ->
+
+                PatientListsScreen(
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+        }
+
+        composable(Screen.MessageInbox.route) {
+            MessageInboxScreen(navController)
+            Scaffold(
+                topBar = {
+                    AppBarWithDrawerButton(
+                        title = "Patient Lists",
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+            ) { paddingValues ->
+
+                MessageInboxScreen(
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+        }
+
+        composable(Screen.ConversationsList.route) {
+            ConversationsListScreen(
+                navController = navController,
+                drawerState = drawerState,
+                scope = currentScope
+            )
+            Scaffold(
+                topBar = {
+                    AppBarWithDrawerButton(
+                        title = "Conversation Lists",
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+            ) { paddingValues ->
+
+                ConversationsListScreen(
+                    navController = navController,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+        }
+
+        // Conversation Detail screen with argument
+        composable(
+            route = Screen.ConversationDetail.route, // Route with argument placeholder
+            arguments = listOf(navArgument(Screen.ConversationDetail.CONVERSATION_ID_KEY) {
+                type = NavType.StringType
+            })
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString(Screen.ConversationDetail.CONVERSATION_ID_KEY)
+            if (conversationId != null) {
+                ConversationDetailScreen(
+                    navController = navController,
+                    conversationId = conversationId,
+                    drawerState = drawerState,
+                    scope = currentScope
+                )
+                Scaffold(
+                    topBar = {
+                        AppBarWithDrawerButton(
+                            title = "Conversation Details",
+                            drawerState = drawerState,
+                            scope = scope
+                        )
+                    }
+                ) { paddingValues ->
+
+                    ConversationDetailScreen(
+                        navController = navController,
+                        modifier = Modifier.padding(paddingValues),
+                        conversationId = conversationId,
+                    )
+                }
+            } else {
+                Log.e("NavGraph", "ConversationDetailScreen: Missing conversationId argument!")
+                 navController.popBackStack()
+            }
         }
     }
 }
