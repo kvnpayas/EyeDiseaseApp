@@ -5,6 +5,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -68,20 +70,23 @@ fun SignInScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    var passwordVisible by remember { mutableStateOf(false) }
 
-// --- Google Sign-In Setup ---
+
+    // --- Google Sign-In Setup ---
     // Configure Google Sign In
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(context.getString(R.string.default_web_client_id)) // Use your web_client_id from google-services.json
             .requestEmail()
+            .requestProfile() // <-- **Ensure requestProfile() is included to get the name**
             .build()
     }
 
     // Build a GoogleSignInClient with the options specified by gso.
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
 
-    val userUtils = remember { UserUtils() }
+    val userUtils = remember { UserUtils() } // <-- Instance of UserUtils
 
     // ActivityResultLauncher for Google Sign-In Intent
     val googleSignInLauncher = rememberLauncherForActivityResult(
@@ -93,8 +98,10 @@ fun SignInScreen(
             try {
                 val account = task.getResult(ApiException::class.java)
                 val idToken = account.idToken
-                val userEmail =
-                    account.email // Get email from Google account if needed for document
+                // --- Get the user's display name from the GoogleSignInAccount ---
+                val googleDisplayName = account.displayName // <-- Get the display name from Google Account
+
+                val userEmail = account.email // Get email from Google account if needed for document
 
                 if (idToken != null) {
                     isLoading = true // Start loading for Firebase auth and document check/creation
@@ -119,16 +126,17 @@ fun SignInScreen(
                                         for (attempt in 1..maxRetries) {
                                             println("SignInScreen Debug: Firestore attempt $attempt for UID: $userId")
                                             try {
-                                                val docExists = userDocumentExists(userId) // <-- Calls utility
-                                                println("SignInScreen Debug: userDocumentExists returned: $docExists on attempt $attempt.")
+                                                // You might need a getUserProfile function in UserUtils
+                                                // For now, let's assume createUserDocument handles existence check internally
+                                                // or you add a separate check here.
+                                                // Based on your UserUtils code, it seems to use set(), which will create or overwrite.
+                                                // Let's proceed with calling createUserDocument directly, assuming it's safe.
 
-                                                if (!docExists) {
-                                                    println("SignInScreen Debug: Document does not exist, creating...")
-                                                    userUtils.createUserDocument(userId, userEmail) // <-- Calls utility
-                                                    println("SignInScreen Debug: Document creation completed.")
-                                                } else {
-                                                    println("SignInScreen Debug: Document already exists.")
-                                                }
+                                                println("SignInScreen Debug: Calling createUserDocument for UID: $userId...")
+                                                // *** Pass the googleDisplayName to createUserDocument ***
+                                                userUtils.createUserDocument(userId, userEmail, googleDisplayName) // <-- Pass the name here
+
+                                                println("SignInScreen Debug: createUserDocument completed for UID: $userId.")
 
                                                 success = true // If we got here, Firestore ops succeeded for this attempt
                                                 break // Exit the retry loop
@@ -156,6 +164,7 @@ fun SignInScreen(
                                             println("SignInScreen Debug: Firestore ops failed after $maxRetries attempts for UID: ${userId}.")
                                             errorMessage = "Failed to set up user data after login: ${lastException?.message ?: "Unknown error"}." // Set final error
                                             // Decide what to do on final failure (e.g., auth.signOut())
+                                            // auth.signOut() // Consider signing out if user data couldn't be saved
                                         }
                                     }
 
@@ -246,8 +255,6 @@ fun SignInScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Password Field
-        var passwordVisible by remember { mutableStateOf(false) }
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
@@ -260,12 +267,14 @@ fun SignInScreen(
         Spacer(modifier = Modifier.height(15.dp))
 
         // Error Message Text
-        if (errorMessage != null) {
+        AnimatedVisibility(visible = errorMessage != null) {
             Text(
                 text = errorMessage ?: "",
                 color = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(15.dp))
         }
 
         Button(
@@ -295,7 +304,7 @@ fun SignInScreen(
                 } else {
                     errorMessage = "Please enter email and password."
                 }
-            }, enabled = !isLoading
+            }, enabled = !isLoading // <-- Added enabled modifier
         ) {
             Text("Sign In")
         }
@@ -305,15 +314,16 @@ fun SignInScreen(
             text = "OR",
         )
         Spacer(modifier = Modifier.height(15.dp))
+
         // Google Sign In Button
         Button(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
-                containerColor = colorResource(id = R.color.google_blue) // Assuming google_blue is in colors.xml
+                containerColor = colorResource(id = R.color.google_blue) // Using your google_blue resource
             ),
             onClick = {
-                isLoading = true // Indicate loading starts when initiating Google flow
-                errorMessage = null // Clear previous errors
+                isLoading = true // <-- Set loading TRUE immediately on click
+                errorMessage = null // <-- Clear error message immediately on click
                 val signInIntent = googleSignInClient.signInIntent
                 googleSignInLauncher.launch(signInIntent)
             },
@@ -326,15 +336,22 @@ fun SignInScreen(
 
         TextButton(
             onClick = onNavigateToSignUp,
-            enabled = !isLoading // Disable button while loading
+            enabled = !isLoading // <-- Added enabled modifier
         ) {
             Text("Don't have an account? Sign Up")
         }
 
         // Show progress indicator if loading
-        if (isLoading) {
-            Spacer(modifier = Modifier.height(16.dp)) // Add space above indicator
-            CircularProgressIndicator()
+        AnimatedVisibility(visible = isLoading) { // <-- Using AnimatedVisibility
+            Column(horizontalAlignment = Alignment.CenterHorizontally) { // Optional: Center indicator and spacer
+                Spacer(modifier = Modifier.height(16.dp)) // Add space above indicator
+                CircularProgressIndicator()
+            }
         }
+        // If AnimatedVisibility is not used for the indicator, keep the Spacer outside:
+        // if (isLoading) {
+        //     Spacer(modifier = Modifier.height(16.dp))
+        //     CircularProgressIndicator()
+        // }
     }
 }

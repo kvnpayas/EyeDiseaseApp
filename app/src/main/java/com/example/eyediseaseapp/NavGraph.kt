@@ -27,8 +27,15 @@ sealed class Screen(val route: String) {
     object Camera : Screen("camera")
     object LearnMore : Screen("learn_more")
     object ResultHistory : Screen("result_history")
-    object PatientLists : Screen("patient_lists")
     object MessageInbox : Screen("message_inbox")
+
+    object PatientLists : Screen("patient_list") // Screen to list patients who initiated consult
+    object PatientConsultedDetail : Screen("patient_consulted_detail/{patientId}") { // Screen to list consulted results for a specific patient
+        // Define argument key
+        const val PATIENT_ID_KEY = "patientId"
+        // Helper to create the route with the argument value
+        fun createRoute(patientId: String) = "patient_consulted_detail/$patientId"
+    }
 
     object ConversationsList : Screen("conversations_list")
     object ConversationDetail : Screen("conversation_detail/{conversationId}") {
@@ -165,7 +172,7 @@ fun NavGraph(navController: NavHostController,
             ImageClassificationScreen(navController)
         }
         composable(Screen.Camera.route) {
-            CameraScreen()
+            CameraScreen(navController)
         }
         composable(Screen.LearnMore.route) {
             EducationalContentScreen(navController)
@@ -191,11 +198,13 @@ fun NavGraph(navController: NavHostController,
         }
 
         composable(Screen.PatientLists.route) {
-            PatientListsScreen(navController)
+            PatientListsScreen(
+                navController = navController,
+            )
             Scaffold(
                 topBar = {
                     AppBarWithDrawerButton(
-                        title = "Patient Lists",
+                        title = "Conversation Lists",
                         drawerState = drawerState,
                         scope = scope
                     )
@@ -206,6 +215,40 @@ fun NavGraph(navController: NavHostController,
                     navController = navController,
                     modifier = Modifier.padding(paddingValues)
                 )
+            }
+        }
+
+        composable(
+            route = Screen.PatientConsultedDetail.route,
+            arguments = listOf(navArgument(Screen.PatientConsultedDetail.PATIENT_ID_KEY) {
+                type = NavType.StringType
+            })
+        ) { backStackEntry ->
+            val patientId = backStackEntry.arguments?.getString(Screen.PatientConsultedDetail.PATIENT_ID_KEY)
+            if (patientId != null) {
+                PatientConsultedDetailScreen(
+                    navController = navController,
+                    patientId = patientId,
+                )
+                Scaffold(
+                    topBar = {
+                        AppBarWithDrawerButton(
+                            title = "Patient Consulted Details",
+                            drawerState = drawerState,
+                            scope = scope
+                        )
+                    }
+                ) { paddingValues ->
+
+                    PatientConsultedDetailScreen(
+                        navController = navController,
+                        modifier = Modifier.padding(paddingValues),
+                        patientId = patientId,
+                    )
+                }
+            } else {
+                Log.e("NavGraph", "PatientConsultedDetailScreen: Missing patientId argument!")
+                 navController.popBackStack()
             }
         }
 

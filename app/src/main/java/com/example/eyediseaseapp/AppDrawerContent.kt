@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.eyediseaseapp.util.NavigationUtils
+import com.example.eyediseaseapp.util.UserUtils
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -49,46 +50,70 @@ fun AppDrawerContent(
 ) {
 
     val auth = FirebaseAuth.getInstance()
-    val currentUserId = auth.currentUser?.uid // Get the current user's UID
+    val currentUserId = auth.currentUser?.uid
 
     // --- State for fetching user role ---
-    var userRole by remember { mutableStateOf<String?>(null) } // Holds the fetched role ('user', 'admin', or null)
-    var isLoadingRole by remember { mutableStateOf(true) } // True while fetching the role
+    var userRole by remember { mutableStateOf<String?>(null) }
+    var isLoadingRole by remember { mutableStateOf(true) }
     var roleError by remember { mutableStateOf<String?>(null) }
+
+    var userName by remember { mutableStateOf<String?>(null) }
+    var isLoadingName by remember { mutableStateOf(true) }
+    var nameError by remember { mutableStateOf<String?>(null) }
+
+    // Instance of UserRepository (or UserUtils)
+    val userRepository = remember { UserUtils() }
 
     LaunchedEffect(currentUserId) {
         Log.d("AppDrawerContent", "LaunchedEffect: currentUserId changed to $currentUserId")
         if (currentUserId != null) {
+            // Fetch role
             isLoadingRole = true
             roleError = null
-            try {
-                // Fetch the role using your existing utility function
-                // fetchUserRole returns Screen? which we need to map back to a role string
+            userRole = try {
                 val destinationScreen = NavigationUtils.fetchUserRole(currentUserId)
-                userRole = when (destinationScreen) {
+                when (destinationScreen) {
                     Screen.PatientHome -> "user"
                     Screen.DoctorHome -> "admin"
                     else -> {
-                        // If fetchUserRole returns SignIn or null, the role is not recognized or doc is missing
                         Log.w("AppDrawerContent", "Fetched unknown or missing role for $currentUserId, destination: $destinationScreen")
-                        null // Treat as unknown role
+                        null
                     }
                 }
-                Log.d("AppDrawerContent", "Fetched user role: $userRole for UID: $currentUserId")
-
             } catch (e: Exception) {
                 roleError = e.message ?: "Failed to load user role."
                 Log.e("AppDrawerContent", "Error fetching user role for $currentUserId: ${e.message}", e)
-                userRole = null
+                null
             } finally {
                 isLoadingRole = false
             }
+
+            // --- Fetch user name ---
+            isLoadingName = true
+            nameError = null
+            userName = try {
+
+                val userProfile = userRepository.getUser(currentUserId)
+                userProfile?.name
+            } catch (e: Exception) {
+                nameError = e.message ?: "Failed to load user name."
+                Log.e("AppDrawerContent", "Error fetching user name for $currentUserId: ${e.message}", e)
+                null
+            } finally {
+                isLoadingName = false
+            }
+
         } else {
 
             userRole = null
             isLoadingRole = false
             roleError = "User not logged in."
-            Log.d("AppDrawerContent", "User ID is null, resetting role state.")
+
+            userName = null
+            isLoadingName = false
+            nameError = "User not logged in."
+
+            Log.d("AppDrawerContent", "User ID is null, resetting state.")
         }
     }
 
@@ -108,12 +133,22 @@ fun AppDrawerContent(
                     .size(100.dp)
                     .padding(end = 16.dp)
             )
-            Text(
-                text = "Eye Disease Menu",
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                fontSize = 24.sp
-            )
+            Column {
+                Text(
+                    text = "Welcome",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 24.sp
+                )
+
+                when {
+                    isLoadingName -> Text("Loading name...", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+                    nameError != null -> Text("Error loading name", color = Color.Red.copy(alpha = 0.7f), fontSize = 14.sp)
+                    userName != null -> Text(userName!!, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp) // Display the fetched name
+                    else -> Text("Guest", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp) // Default for logged out or no name
+                }
+            }
+
         }
 
         Divider()
@@ -137,12 +172,10 @@ fun AppDrawerContent(
                 Text("Error loading menu: ${roleError}", color = Color.Red, textAlign = TextAlign.Center)
             }
         } else {
-            // --- Conditionally Display Navigation Items based on Role ---
 
-            // --- Patient Home / Doctor Home Item ---
-            // If user is 'user', show Patient Home. If user is 'admin', show Doctor Home.
+
             val homeRoute = if (userRole == "admin") Screen.DoctorHome.route else Screen.PatientHome.route
-            val homeLabel = if (userRole == "admin") "Doctor Home" else "Patient Home"
+            val homeLabel = "Home"
 
             NavigationDrawerItem(
                 label = {

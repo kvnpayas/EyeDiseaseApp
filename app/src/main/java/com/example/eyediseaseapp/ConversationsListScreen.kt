@@ -267,7 +267,7 @@ fun ConversationListItem(
     // and a function in UserRepository to get a user's name by UID.
     // For simplicity, let's assume patientName is stored in the Conversation document.
     val patientDisplayName =
-        conversation.patientName ?: "Patient ${conversation.patientId.take(4)}..." // Fallback name
+        conversation.lastSenderName ?: "Patient ${conversation.patientId.take(4)}..." // Fallback name
 
 
     Column(

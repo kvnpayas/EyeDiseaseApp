@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class) // Use appropriate opt-in
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppBarWithDrawerButton(
     title: String,
@@ -28,7 +28,7 @@ fun AppBarWithDrawerButton(
         navigationIcon = {
             IconButton(onClick = {
                 scope.launch {
-                    drawerState.open() // Open the drawer
+                    drawerState.open()
                 }
             }) {
                 Icon(
@@ -39,11 +39,8 @@ fun AppBarWithDrawerButton(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.Transparent, // Set the background color to Transparent
-            // Optional: Adjust other colors if needed for contrast against the content behind
-            // titleContentColor = Color.Black,
-            // navigationIconContentColor = Color.Black,
-            // actionIconContentColor = Color.Black
+            containerColor = Color.Transparent,
+
         )
     )
 }

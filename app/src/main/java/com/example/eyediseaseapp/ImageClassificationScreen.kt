@@ -68,6 +68,7 @@ import com.example.eyediseaseapp.util.DetectionResult
 import com.example.eyediseaseapp.util.ImageClassifierHelper
 import com.example.eyediseaseapp.util.ResultRepository
 import com.example.eyediseaseapp.util.UltralyticsAPIHelper
+import com.example.eyediseaseapp.util.UserUtils
 import com.example.eyediseaseapp.util.generatePdf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -489,8 +490,7 @@ fun ImageClassificationScreen(navController: NavController) {
                                                                 val savedResult = resultRepository.savePatientResult(
                                                                     bitmap = bitmapToSave,
                                                                     result = resultMessage,
-                                                                    confidence = bestConfidence.toDouble()
-                                                                    // patientName = patientName // If you have it
+                                                                    confidence = bestConfidence.toDouble(),
                                                                 )
                                                                 println("Save successful: ${savedResult.result} with confidence ${savedResult.confidence}")
 

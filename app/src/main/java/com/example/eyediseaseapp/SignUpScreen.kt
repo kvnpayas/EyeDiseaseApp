@@ -59,6 +59,10 @@ fun SignUpScreen(
     val auth = FirebaseAuth.getInstance()
     val coroutineScope = rememberCoroutineScope() // Need a coroutine scope for createUserDocument
     val context = LocalContext.current // Get context for Toast
+    val userRepository = remember { UserUtils() } // <-- Create an instance of UserRepository
+
+    // --- State for Name Input ---
+    var name by remember { mutableStateOf("") } // <-- Add state for name
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -67,7 +71,6 @@ fun SignUpScreen(
 
     // State for password visibility toggle
     var passwordVisible by remember { mutableStateOf(false) }
-    val userUtils = remember { UserUtils() }
 
 
     Column(
@@ -79,11 +82,12 @@ fun SignUpScreen(
     ) {
         // Optional: Add your app logo or image here
         Image(
-            painter = painterResource(id = R.drawable.eye_logo),
-            contentDescription = "image 1",
+            painter = painterResource(id = R.drawable.scan_eye), // Replace with your logo resource
+            contentDescription = "App Logo",
+            colorFilter = ColorFilter.tint(colorResource(id = R.color.darkPrimary)), // Assuming darkPrimary is in colors.xml
             modifier = Modifier
-                .width(150.dp)
-                .height(150.dp),
+                .width(80.dp)
+                .height(80.dp),
             contentScale = ContentScale.Crop
         )
 
@@ -97,6 +101,19 @@ fun SignUpScreen(
         )
 
         Spacer(modifier = Modifier.height(24.dp))
+
+        // --- Name Field ---
+        OutlinedTextField(
+            value = name, // <-- Use the name state
+            onValueChange = { name = it }, // <-- Update the name state
+            label = { Text("Name") }, // <-- Label for the field
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text), // <-- Text keyboard
+            enabled = !isLoading // Disable while loading
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
 
         // Email Field
         OutlinedTextField(
@@ -121,14 +138,14 @@ fun SignUpScreen(
             enabled = !isLoading, // Disable while loading
             trailingIcon = {
                 val image = if (passwordVisible)
-                    Icons.Default.Visibility
-                else Icons.Default.VisibilityOff
+                    Icons.Default.Visibility // This requires material-icons-extended
+                else Icons.Default.VisibilityOff // This requires material-icons-extended
 
                 // Localized description for accessibility
                 val description = if (passwordVisible) "Hide password" else "Show password"
 
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                    Icon(imageVector = image, description)
+                    Icon(imageVector = image, contentDescription = description) // Added contentDescription
                 }
             }
         )
@@ -155,6 +172,10 @@ fun SignUpScreen(
             ),
             onClick = {
                 // Basic validation
+                if (name.isBlank()) { // <-- Validate name is not blank
+                    errorMessage = "Please enter your name."
+                    return@Button
+                }
                 if (email.isBlank() || password.isBlank()) {
                     errorMessage = "Please enter email and password."
                     return@Button // Stop execution here
@@ -179,8 +200,8 @@ fun SignUpScreen(
                                 coroutineScope.launch { // Use coroutineScope to call suspend function
                                     try {
                                         // Call the function to create the user document with default role
-                                        // Assuming createUserDocument is accessible here (e.g., in ResultRepository)
-                                        userUtils.createUserDocument(userId, userEmail) // Call the suspend function
+                                        // *** Pass the entered name to createUserDocument ***
+                                        userRepository.createUserDocument(userId, userEmail, name) // <-- Pass the name here
 
                                         println("SignUpScreen: User account created and document saved for $userId.")
 
@@ -233,3 +254,19 @@ fun SignUpScreen(
         }
     }
 }
+
+// You might want a preview for this screen
+/*
+@Preview(showBackground = true)
+@Composable
+fun SignUpScreenPreview() {
+    // Assuming EyeDiseaseAppTheme is correctly imported and defined
+    EyeDiseaseAppTheme {
+        SignUpScreen(
+            navController = rememberNavController(), // Mock NavController
+            onSignUpSuccess = { userId -> println("Preview: Mock onSignUpSuccess called for $userId") },
+            onNavigateToSignIn = { println("Preview: Mock onNavigateToSignIn called") }
+        )
+    }
+}
+*/

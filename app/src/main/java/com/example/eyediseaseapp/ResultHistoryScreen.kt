@@ -1,5 +1,6 @@
 package com.example.eyediseaseapp
 
+import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Image
@@ -23,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -55,10 +58,15 @@ import coil3.request.crossfade
 import com.example.eyediseaseapp.util.MessageRepoUtils
 import com.example.eyediseaseapp.util.PatientResult
 import com.example.eyediseaseapp.util.ResultRepository
+import com.example.eyediseaseapp.util.UserUtils
+import com.example.eyediseaseapp.util.generatePdf
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
+import androidx.core.graphics.drawable.toBitmap
+import coil3.toBitmap
+import com.example.eyediseaseapp.util.NavigationUtils
 
 @Composable
 fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modifier) {
@@ -77,9 +85,20 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
 
     val messageRepository = remember { MessageRepoUtils() }
 
+    val userRepository = remember { UserUtils() }
+    var currentUserName by remember { mutableStateOf<String?>(null) } // Holds the current user's name
+    var isLoadingUserName by remember { mutableStateOf(true) } // True while fetching the name
+    var userNameError by remember { mutableStateOf<String?>(null) }
+
+    // --- State for fetching current user's role ---
+    var currentUserRole by remember { mutableStateOf<String?>(null) } // Holds the fetched role ('user', 'admin', or null)
+    var isLoadingRole by remember { mutableStateOf(true) } // True while fetching the role
+    var roleError by remember { mutableStateOf<String?>(null) }
+
+
 
     // --- Fetch Results on Compose ---
-    LaunchedEffect(currentUserId) { // Rerun fetch if user ID changes (e.g., after login/logout)
+    LaunchedEffect(currentUserId) {
         if (currentUserId != null) {
             isHistoryLoading = true
             historyErrorMessage = null
@@ -91,11 +110,58 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
             } finally {
                 isHistoryLoading = false
             }
+
+            isLoadingUserName = true
+            userNameError = null
+            currentUserName = try {
+                val userProfile = userRepository.getUser(currentUserId) // <-- Fetch user profile
+                userProfile?.name // Get the name
+            } catch (e: Exception) {
+                userNameError = e.message ?: "Failed to load user name."
+                Log.e(
+                    "ResultHistory",
+                    "Error fetching user name for $currentUserId: ${e.message}",
+                    e
+                )
+                null
+            } finally {
+                isLoadingUserName = false
+            }
+
+            isLoadingRole = true
+            roleError = null
+            currentUserRole = try {
+                val destinationScreen = NavigationUtils.fetchUserRole(currentUserId)
+                when (destinationScreen) {
+                    Screen.PatientHome -> "user"
+                    Screen.DoctorHome -> "admin" // Use DoctorHomeScreen route name
+                    else -> {
+                        // If fetchUserRole returns SignIn or null, the role is not recognized or doc is missing
+                        Log.w("ResultHistory", "Fetched unknown or missing role for $currentUserId, destination: $destinationScreen")
+                        null // Treat as unknown role
+                    }
+                }
+            } catch (e: Exception) {
+                roleError = e.message ?: "Failed to load user role."
+                Log.e("ResultHistory", "Error fetching user role for $currentUserId: ${e.message}", e)
+                null
+            } finally {
+                isLoadingRole = false
+            }
+
         } else {
             // Handle the case where the user is not logged in (shouldn't happen if NavGraph is set up correctly)
             historyErrorMessage = "User not logged in."
             resultsList = emptyList() // Clear the list
             isHistoryLoading = false
+
+            currentUserName = null
+            isLoadingUserName = false
+            userNameError = "User not logged in."
+
+            currentUserRole = null
+            isLoadingRole = false
+            roleError = "User not logged in."
             // Optionally navigate back to sign-in if user is unexpectedly null here
             // navController.navigate(Screen.SignIn.route) { popUpTo(Screen.AuthCheck.route) { inclusive = true } }
         }
@@ -133,16 +199,29 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- Loading, Empty, or Error State ---
-            if (isHistoryLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Loading history...")
-            } else if (historyErrorMessage != null) {
-                Text("Error: $historyErrorMessage", color = Color.Red, textAlign = TextAlign.Center)
-            } else if (resultsList.isEmpty()) {
-                // Only show "No results" if loading is done and list is empty and no error
+            if (isHistoryLoading || isLoadingUserName || isLoadingRole) { // Include name loading in overall loading
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Loading history...")
+                }
+            } else if (historyErrorMessage != null || userNameError != null || roleError != null) { // Include name error
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val combinedError = listOfNotNull(historyErrorMessage, userNameError, roleError).joinToString("\n")
+                    Text("Error loading data: $combinedError", color = Color.Red, textAlign = TextAlign.Center)
+                }
+            } else if (resultsList.isEmpty() && !isHistoryLoading) {
+                Spacer(modifier = Modifier.height(16.dp))
                 Text("No results history found.", textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.weight(1f))
             } else {
                 // --- Display the List of Results ---
                 // LazyColumn is efficient for displaying a potentially long list
@@ -159,6 +238,7 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
                         // --- Composable for a Single History Item ---
                         HistoryItem(
                             result = result, // Pass the result object
+                            currentUserRole = currentUserRole,
                             onDeleteClick = {
                                 // --- Handle Delete Action ---
                                 Log.d(
@@ -202,21 +282,34 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
                             },
                             // --- Implement onConsultClick ---
                             onConsultClick = { resultToConsult ->
-                                Log.d("ResultHistory", "Consult clicked for Doc ID: ${resultToConsult.documentId}")
+                                Log.d(
+                                    "ResultHistory",
+                                    "Consult clicked for Doc ID: ${resultToConsult.documentId}"
+                                )
                                 val patientId = currentUserId // The current user is the patient
-                                val doctorId = messageRepository.doctorAdminId // Get doctor's UID from repo
 
-                                if (patientId != null && patientId != doctorId) { // Ensure it's a patient clicking consult
+                                if (patientId != null && currentUserRole == "user") { // Ensure it's a patient clicking consult
                                     coroutineScope.launch {
                                         try {
                                             // 1. Initiate the conversation/send the first message
-                                            val conversationId = messageRepository.initiateConsultation(
-                                                patientId = patientId,
-                                                initialMessageText = "Hello Doctor, I would like to consult about my result: ${resultToConsult.result} (Confidence: ${String.format("%.2f", resultToConsult.confidence * 100)}%). Result ID: ${resultToConsult.documentId}",
-                                                resultId = resultToConsult.documentId
-                                            )
+                                            val conversationId =
+                                                messageRepository.initiateConsultation(
+                                                    patientId = patientId,
+                                                    initialMessageText = "Hello Doctor, I would like to consult about my result: ${resultToConsult.result} (Confidence: ${
+                                                        String.format(
+                                                            "%.2f",
+                                                            resultToConsult.confidence * 100
+                                                        )
+                                                    }%). Result ID: ${resultToConsult.documentId}",
+                                                    resultId = resultToConsult.documentId,
+                                                    patientName = currentUserName,
+                                                    lastSenderName = currentUserName,
+                                                )
 
-                                            Log.d("ResultHistory", "Consultation initiated/message sent. Conversation ID: $conversationId")
+                                            Log.d(
+                                                "ResultHistory",
+                                                "Consultation initiated/message sent. Conversation ID: $conversationId"
+                                            )
 
                                             // 2. Update the PatientResult document in Firestore
                                             // This call persists the isConsultInitiated = true state
@@ -224,14 +317,20 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
                                                 resultId = resultToConsult.documentId,
                                                 conversationId = conversationId
                                             )
-                                            Log.d("ResultHistory", "PatientResult document updated in Firestore.")
+                                            Log.d(
+                                                "ResultHistory",
+                                                "PatientResult document updated in Firestore."
+                                            )
 
 
                                             // 3. Update the local list state
                                             // This causes the UI to update immediately
                                             resultsList = resultsList.map {
                                                 if (it.documentId == resultToConsult.documentId) {
-                                                    it.copy(consult = true, conversationId = conversationId)
+                                                    it.copy(
+                                                        consult = true,
+                                                        conversationId = conversationId
+                                                    )
                                                 } else {
                                                     it
                                                 }
@@ -240,18 +339,29 @@ fun ResultHistoryScreen(navController: NavController, modifier: Modifier = Modif
 
 
                                             // 4. Navigate to the conversation screen
-                                            navController.navigate(Screen.ConversationDetail.createRoute(conversationId)) {
+                                            navController.navigate(
+                                                Screen.ConversationDetail.createRoute(
+                                                    conversationId
+                                                )
+                                            ) {
                                                 // Optional: Pop up to history screen to avoid back stack issues? Depends on desired flow.
                                                 // popUpTo(Screen.ResultHistory.route) { inclusive = false } // Example
                                                 launchSingleTop = true
                                             }
 
                                         } catch (e: Exception) {
-                                            Log.e("ResultHistory", "Failed to initiate consultation for ${resultToConsult.documentId}: ${e.message}", e)
+                                            Log.e(
+                                                "ResultHistory",
+                                                "Failed to initiate consultation for ${resultToConsult.documentId}: ${e.message}",
+                                                e
+                                            )
                                         }
                                     }
                                 } else {
-                                    Log.w("ResultHistory", "Consult clicked by non-patient user or user not logged in.")
+                                    Log.w(
+                                        "ResultHistory",
+                                        "Consult clicked by non-patient user or user not logged in."
+                                    )
                                     // Handle case where consult is clicked by admin or logged out user (shouldn't happen if UI is correct)
                                 }
                             }
@@ -280,6 +390,12 @@ fun ResultDetailsDialog(
     result: PatientResult, // The result data to display
     onDismiss: () -> Unit // Lambda to call when the dialog should be closed
 ) {
+    val userUtils = remember { UserUtils() }
+    var fetchedPatientName by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(result.userId) { // Use result.userId as the key
+        Log.d("ResultDetailsDialog", "LaunchedEffect: Fetching patient name for UID: ${result.userId}")
+        fetchedPatientName = userUtils.getUserName(result.userId)
+    }
     // Use Dialog for a simple modal popup
     Dialog(onDismissRequest = onDismiss) {
         // The content inside the Dialog. We'll reuse the design from ImageClassificationScreen.
@@ -300,6 +416,7 @@ fun ResultDetailsDialog(
 
                 var isImageLoading by remember { mutableStateOf(true) }
                 var imageLoadError by remember { mutableStateOf<String?>(null) }
+                var loadedBitmap by remember { mutableStateOf<Bitmap?>(null) }
                 val context = LocalContext.current // Get the context
                 val painter = rememberAsyncImagePainter( // Use rememberAsyncImagePainter
                     ImageRequest.Builder(context)
@@ -310,42 +427,42 @@ fun ResultDetailsDialog(
                                 Log.d("CoilDebug", "Image load started for URL: ${result.imageUrl}")
                                 isImageLoading = true
                                 imageLoadError = null
+                                loadedBitmap = null
                             },
                             onSuccess = { request: ImageRequest, successResult: SuccessResult ->
-                                Log.d("CoilDebug", "Image load successful for URL: ${result.imageUrl}")
+                                Log.d(
+                                    "CoilDebug",
+                                    "Image load successful for URL: ${result.imageUrl}"
+                                )
                                 isImageLoading = false
                                 imageLoadError = null
+                                loadedBitmap = successResult.image.toBitmap()
                             },
                             onError = { request: ImageRequest, errorResult: ErrorResult ->
-                                Log.e("CoilDebug", "Image load failed for URL: ${result.imageUrl}. Error: ${errorResult.throwable.message}", errorResult.throwable)
+                                Log.e(
+                                    "CoilDebug",
+                                    "Image load failed for URL: ${result.imageUrl}. Error: ${errorResult.throwable.message}",
+                                    errorResult.throwable
+                                )
                                 isImageLoading = false
-                                imageLoadError = errorResult.throwable.message ?: "Unknown image load error"
+                                imageLoadError =
+                                    errorResult.throwable.message ?: "Unknown image load error"
+                                loadedBitmap = null
                             }
                         )
                         .build()
                 )
-                 Image(
-                     painter = painter,
-                     contentDescription = "Saved Result Image",
-                     modifier = Modifier
-                         .size(250.dp) // Adjust size as needed
-                         .border(1.dp, Color.Gray, RoundedCornerShape(8.dp)) // Optional border
-                 )
-                // Placeholder if not using Coil/Glide yet:
-//                Box(
-//                    modifier = Modifier
-//                        .size(250.dp) // Placeholder size
-//                        .background(Color.LightGray, RoundedCornerShape(8.dp)),
-//                    contentAlignment = Alignment.Center
-//                ) {
-//                    Text("Image Placeholder", textAlign = TextAlign.Center)
-//                }
-
+                Image(
+                    painter = painter,
+                    contentDescription = "Saved Result Image",
+                    modifier = Modifier
+                        .size(250.dp) // Adjust size as needed
+                        .border(1.dp, Color.Gray, RoundedCornerShape(8.dp)) // Optional border
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // --- Display Classification Results Details ---
-                // Reuse the structure from ImageClassificationScreen's result Box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -372,21 +489,19 @@ fun ResultDetailsDialog(
                         if (result.confidence > 0) {
                             Spacer(modifier = Modifier.padding(2.dp))
                             Text(
-                                text = "Confidence: ${String.format("%.2f", result.confidence * 100)}%",
+                                text = "Confidence: ${
+                                    String.format(
+                                        "%.2f",
+                                        result.confidence * 100
+                                    )
+                                }%",
                                 color = colorResource(id = R.color.darkPrimary),
                                 fontSize = 14.sp,
                             )
                         }
-                        // Optional: Display Patient Name if saved
-                        // if (result.patientName != null) {
-                        //     Spacer(modifier = Modifier.height(2.dp))
-                        //     Text("Patient: ${result.patientName}", fontSize = 14.sp)
-                        // }
-
 
                         Spacer(modifier = Modifier.padding(10.dp))
 
-                        // --- Conditional Clinics/Advice based on Result ---
                         if (result.result == "Cataract" || result.result == "Glaucoma") {
                             Text(
                                 text = "For further evaluation, consult an ophthalmologist. Here are suggested clinics:",
@@ -471,7 +586,6 @@ fun ResultDetailsDialog(
                             )
 
 
-
                         } else if (result.result == "Normal") {
                             Text(
                                 text = "If you are experiencing any eye discomfort, vision changes, or have any concerns about your eye health, it is always recommended to consult with a qualified ophthalmologist for a comprehensive eye examination.",
@@ -488,9 +602,30 @@ fun ResultDetailsDialog(
                     }
                 }
 
-                // --- Close Button ---
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = onDismiss) { // Call the dismiss lambda
+                Button(
+                    onClick = {
+                        // Call the generatePdf utility function
+                        generatePdf(
+                            context = context,
+                            imageBitmap = loadedBitmap, // Pass the loaded bitmap (Bitmap?)
+                            patientName = fetchedPatientName, // Pass the patient name from the result (String?)
+                            className = result.result,
+                            confidence = result.confidence.toFloat() // Convert Double to Float
+                        )
+                    },
+                    enabled = loadedBitmap != null // Disable if image hasn't loaded
+                ) {
+                    Text("Download PDF")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Gray,
+                        contentColor = Color.DarkGray,
+                    )
+                ) {
                     Text("Close")
                 }
             }
@@ -501,7 +636,8 @@ fun ResultDetailsDialog(
 @Composable
 fun HistoryItem(
     result: PatientResult, // The result data for this item
-    onDeleteClick: () -> Unit, // Lambda to call when delete button is clicked
+    onDeleteClick: () -> Unit,
+    currentUserRole: String?,// Lambda to call when delete button is clicked
     onViewClick: (PatientResult) -> Unit,
     onConsultClick: (PatientResult) -> Unit,
     modifier: Modifier = Modifier // Modifier for external customization
@@ -547,12 +683,22 @@ fun HistoryItem(
             )
         }
 
+        if (result.consult) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Consultation initiated",
+                fontSize = 14.sp,
+                color = colorResource(id = R.color.normalPrimary),
+                fontStyle = FontStyle.Italic
+            )
+        }
+
 
         // --- Action Buttons (Remove, View) ---
         Spacer(modifier = Modifier.height(16.dp)) // Space before buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End // Align buttons to the end
+            horizontalArrangement = Arrangement.Center // Align buttons to the end
         ) {
             // Remove Button
 //            Button(
@@ -566,30 +712,59 @@ fun HistoryItem(
 //            Spacer(modifier = Modifier.width(8.dp)) // Space between buttons
 
             Button(
-                onClick = { onViewClick(result) } // <-- Call onViewClick lambda, passing the current result
-                // Optional: Customize button colors/shape
+                onClick = { onViewClick(result) },
+                modifier = Modifier.padding(1.dp),
+                shape = RoundedCornerShape(5.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colorResource(id = R.color.lightPrimary),
+                    contentColor = Color.White
+                )
             ) {
-                Text("View")
+                Text(
+                    text = "View",
+                    fontSize = 12.sp
+                )
             }
 
-            Spacer(modifier = Modifier.width(8.dp)) // Space between buttons
+            if (currentUserRole == "user") {
+                Spacer(modifier = Modifier.width(8.dp)) // Space between buttons
 
-            // --- Consult Button (Only if not already initiated) ---
-            if (!result.consult) {
-                Button(
-                    onClick = { onConsultClick(result) } // <-- Call the consult lambda
-                    // Optional: Customize button colors/shape
-                ) {
-                    Text("Consult")
+                // --- Consult Button (Only if not already initiated) ---
+                if (!result.consult) {
+                    Button(
+                        onClick = { onConsultClick(result) },
+                        modifier = Modifier.padding(1.dp),
+                        shape = RoundedCornerShape(5.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colorResource(id = R.color.darkPrimary),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text(
+                            text = "Consult",
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+
+                    Button(
+                        onClick = { /* Do nothing when disabled */ },
+                        modifier = Modifier.padding(1.dp),
+                        shape = RoundedCornerShape(5.dp),
+                        enabled = false,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Gray,
+                            contentColor = Color.DarkGray,
+                            disabledContainerColor = Color.LightGray,
+                            disabledContentColor = Color.Gray
+                        )
+                    ) {
+                        Text(
+                            text = "Consult",
+                            fontSize = 12.sp
+                        )
+                    }
                 }
-            } else {
-                // Show text indicating consultation is initiated
-                Text(
-                    text = "Consultation initiated",
-                    modifier = Modifier.align(Alignment.CenterVertically).padding(horizontal = 8.dp),
-                    fontSize = 14.sp,
-                    color = Color.Gray // Optional: different color
-                )
             }
         }
     }

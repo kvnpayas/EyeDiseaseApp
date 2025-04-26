@@ -35,6 +35,7 @@ import android.widget.Toast // For showing Toast
 import androidx.compose.ui.platform.LocalContext
 import com.example.eyediseaseapp.util.MessageRepoUtils
 import com.example.eyediseaseapp.util.Message
+import com.example.eyediseaseapp.util.NavigationUtils
 import com.example.eyediseaseapp.util.PatientResult
 import com.example.eyediseaseapp.util.ResultRepository
 
@@ -72,7 +73,46 @@ fun ConversationDetailScreen(
     var messageInput by remember { mutableStateOf("") }
     var isSendingMessage by remember { mutableStateOf(false) }
 
+    // --- State for fetching current user's role ---
+    var currentUserRole by remember { mutableStateOf<String?>(null) } // Holds the fetched role ('user', 'admin', or null)
+    var isLoadingRole by remember { mutableStateOf(true) } // True while fetching the role
+    var roleError by remember { mutableStateOf<String?>(null) }
+
     var selectedResultForViewDialog by remember { mutableStateOf<PatientResult?>(null) }
+
+    LaunchedEffect(currentUserId) {
+        Log.d("ConversationDetail", "LaunchedEffect: currentUserId changed to $currentUserId")
+        if (currentUserId != null) {
+            isLoadingRole = true
+            roleError = null
+            currentUserRole = try {
+                // Fetch the role using your existing utility function
+                val destinationScreen = NavigationUtils.fetchUserRole(currentUserId)
+                when (destinationScreen) {
+                    Screen.PatientHome -> "user"
+                    Screen.DoctorHome -> "admin" // Use DoctorHomeScreen route name
+                    else -> {
+                        // If fetchUserRole returns SignIn or null, the role is not recognized or doc is missing
+                        Log.w("ConversationDetail", "Fetched unknown or missing role for $currentUserId, destination: $destinationScreen")
+                        null // Treat as unknown role
+                    }
+                }
+            } catch (e: Exception) {
+                roleError = e.message ?: "Failed to load user role."
+                Log.e("ConversationDetail", "Error fetching user role for $currentUserId: ${e.message}", e)
+                null
+            } finally {
+                isLoadingRole = false
+            }
+            Log.d("ConversationDetail", "Fetched current user role: $currentUserRole for UID: $currentUserId")
+        } else {
+            currentUserRole = null
+            isLoadingRole = false
+            roleError = "User not logged in."
+            Log.d("ConversationDetail", "User ID is null, resetting role state.")
+        }
+    }
+
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -89,13 +129,21 @@ fun ConversationDetailScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.FillWidth
             )
+            val headerText = when {
+                isLoadingRole || conversation == null -> "Loading..." // Show loading if role or conversation is loading
+                roleError != null -> "Error loading name" // Show error if role fetch failed
+                currentUserRole == "user" -> conversation.doctorName ?: "Doctor" // Patient sees Doctor's name
+                currentUserRole == "admin" -> conversation.patientName ?: "Patient" // Doctor sees Patient's name
+                else -> "Conversation" // Default for unknown role
+            }
+
             Text(
-                text = conversation?.patientId ?: "Loading...", // Show patient name or loading text
+                text = headerText, // Use the determined header text
                 color = colorResource(id = R.color.darkPrimary),
                 fontSize = 30.sp,
                 textAlign = TextAlign.Center,
                 style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                modifier = Modifier.padding(top = 100.dp) // Adjust padding to position text
+                modifier = Modifier.padding(top = 100.dp)
             )
 
         }

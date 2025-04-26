@@ -6,35 +6,50 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.channels.awaitClose // <-- Import this
-import kotlinx.coroutines.flow.callbackFlow // <-- Import this
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 
 class MessageRepoUtils {
 
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
+    private val userUtils = UserUtils()
 
-    // Replace with the actual UID of your doctor/admin user
-    // You might store this in config or fetch it, but for a single admin, hardcoding temporarily is possible if you're careful
-   val doctorAdminId = "TzrIcq1oAbcFSE8pVGFBZK6GISY2" // <-- **IMPORTANT: Replace with the actual UID of your doctor user**
+    private suspend fun findAdminUid(): String? {
+        return try {
+            Log.d("MessageRepo", "Attempting to find admin UID...")
+            val adminQuery = firestore.collection("users")
+                .whereEqualTo("role", "admin")
+                .limit(1)
 
+            val snapshot = adminQuery.get().await()
 
-    /**
-     * Initiates a new conversation or sends the first message if conversation exists.
-     * Called when the patient clicks the "Consult" button.
-     *
-     * @param patientId The UID of the patient.
-     * @param initialMessageText The text of the first message (e.g., linking to the result).
-     * @param resultId The ID of the result that triggered the consult.
-     * @return The ID of the conversation (which is the patientId).
-     * @throws Exception if the operation fails.
-     */
+            if (snapshot.isEmpty) {
+                Log.w("MessageRepo", "No user with 'admin' role found.")
+                null
+            } else if (snapshot.size() > 1) {
+
+                Log.w("MessageRepo", "Multiple users with 'admin' role found. Using the first one.")
+                snapshot.documents.first().id
+            }
+            else {
+                val adminUid = snapshot.documents.first().id
+                Log.d("MessageRepo", "Admin UID found: $adminUid")
+                adminUid
+            }
+        } catch (e: Exception) {
+            Log.e("MessageRepo", "Error finding admin UID: ${e.message}", e)
+            null // Return null on error
+        }
+    }
+
     suspend fun initiateConsultation(
         patientId: String,
         initialMessageText: String,
-        resultId: String
+        resultId: String,
+        patientName: String? = null,
+        lastSenderName: String? = null
     ): String {
         val conversationRef = firestore.collection("conversations").document(patientId)
 
@@ -43,14 +58,20 @@ class MessageRepoUtils {
 
         val conversationId = patientId // Conversation ID is the patient's UID
 
+        val doctorId = findAdminUid()
+            ?: throw IllegalStateException("Admin user not found. Cannot initiate consultation.")
+        val doctorName = userUtils.getUserName(doctorId)
+
         if (!conversationDoc.exists()) {
             // Conversation does not exist, create it
             Log.d("MessageRepo", "Creating new conversation for patient: $patientId")
 
             val newConversation = Conversation(
                 patientId = patientId,
-                doctorId = doctorAdminId,
-                // patientName: You might fetch the patient's name from their user doc here
+                doctorId = doctorId,
+                patientName = patientName,
+                doctorName = doctorName,
+                lastSenderName = lastSenderName,
                 lastMessageTimestamp = Timestamp.now(), // Will be updated by first message
                 lastMessageText = null, // Will be updated by first message
                 initiatedResultId = resultId
@@ -66,18 +87,12 @@ class MessageRepoUtils {
         }
 
         // Send the first message
-        // Use the dedicated sendMessage function to keep logic consistent
         sendMessage(
             conversationId = conversationId,
             senderId = patientId,
             text = initialMessageText,
-            resultId = resultId // Link the first message to the result
+            resultId = resultId
         )
-
-        // Optional: Update the PatientResult document to mark consultation initiated
-        // This requires access to ResultRepository or similar logic here
-        // For now, let's assume this update happens elsewhere after initiateConsultation succeeds.
-        // You might return the conversationId and then update the PatientResult in ResultHistoryScreen.
 
         return conversationId // Return the conversation ID
     }
@@ -99,13 +114,14 @@ class MessageRepoUtils {
         resultId: String? = null
     ) {
         val messagesRef = firestore.collection("conversations").document(conversationId).collection("messages")
+        val lastSenderName = userUtils.getUserName(senderId)
 
         val newMessage = Message(
             senderId = senderId,
             text = text,
-            timestamp = Timestamp.now(), // Use server timestamp for accuracy
-            read = false, // Mark as unread initially
-            resultId = resultId // Include result ID if provided
+            timestamp = Timestamp.now(),
+            read = false,
+            resultId = resultId
         )
 
         Log.d("MessageRepo", "Sending message to conversation $conversationId from sender $senderId")
@@ -114,13 +130,12 @@ class MessageRepoUtils {
         messagesRef.add(newMessage).await()
         Log.d("MessageRepo", "Message added to conversation $conversationId")
 
-        // Optional: Update the last message timestamp and text in the conversation document
-        // This is important for ordering the doctor's inbox
         firestore.collection("conversations").document(conversationId)
             .update(
                 mapOf(
                     "lastMessageTimestamp" to Timestamp.now(),
-                    "lastMessageText" to text // Update last message text
+                    "lastMessageText" to text,
+                    "lastSenderName" to lastSenderName
                 )
             )
             .await()
@@ -128,24 +143,18 @@ class MessageRepoUtils {
 
     }
 
-    /**
-     * Gets a real-time stream of messages for a specific conversation.
-     *
-     * @param conversationId The ID of the conversation (patientId).
-     * @return A Flow emitting Lists of Message objects whenever messages change.
-     */
-    fun getMessages(conversationId: String): Flow<List<Message>> = callbackFlow { // <-- Use callbackFlow
+    fun getMessages(conversationId: String): Flow<List<Message>> = callbackFlow {
         val messagesQuery = firestore.collection("conversations").document(conversationId)
             .collection("messages")
             .orderBy("timestamp", Query.Direction.ASCENDING) // Order by time
 
         // Use snapshots to get real-time updates
-        val registration = messagesQuery.addSnapshotListener { snapshot, e -> // <-- Store the registration
+        val registration = messagesQuery.addSnapshotListener { snapshot, e ->
             if (e != null) {
                 Log.w("MessageRepo", "Listen failed for messages in $conversationId.", e)
-                // Handle error - send empty list and close the channel
-                trySend(emptyList()) // Safely emit empty list on error
-                close(e) // Close the flow with the error
+
+                trySend(emptyList())
+                close(e)
                 return@addSnapshotListener
             }
 
@@ -160,47 +169,41 @@ class MessageRepoUtils {
                     }
                 }
                 Log.d("MessageRepo", "Received ${messages.size} messages for conversation $conversationId")
-                // Emit the new list of messages to the Flow
-                trySend(messages) // <-- Use trySend
+
+                trySend(messages)
             } else {
-                // Snapshot is null but no error? Should not happen often, but handle defensively
+
                 Log.w("MessageRepo", "Received null snapshot for messages in $conversationId with no error.")
-                trySend(emptyList()) // Safely emit empty list
+                trySend(emptyList())
             }
         }
 
-        // This block keeps the flow alive as long as there are collectors.
-        // When the flow is cancelled or finishes, the awaitClose block is executed.
-        awaitClose { // <-- Use awaitClose
+
+        awaitClose {
             Log.d("MessageRepo", "Stopping snapshot listener for messages in $conversationId")
             registration.remove() // <-- Remove the listener when the flow is no longer collected
         }
     }
 
 
-    /**
-     * Gets a real-time stream of conversations for the doctor's inbox.
-     *
-     * @param doctorId The UID of the doctor/admin.
-     * @return A Flow emitting Lists of Conversation objects whenever conversations change.
-     */
-    fun getConversationsForDoctor(doctorId: String): Flow<List<Conversation>> = callbackFlow { // <-- Use callbackFlow
+
+    fun getConversationsForDoctor(doctorId: String): Flow<List<Conversation>> = callbackFlow {
         val conversationsQuery = firestore.collection("conversations")
-            .whereEqualTo("doctorId", doctorId) // Filter conversations for this doctor
-            .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING) // Order by most recent message
+            .whereEqualTo("doctorId", doctorId)
+            .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING)
 
         // Use snapshots for real-time updates
-        val registration = conversationsQuery.addSnapshotListener { snapshot, e -> // <-- Store the registration
+        val registration = conversationsQuery.addSnapshotListener { snapshot, e ->
             if (e != null) {
                 Log.w("MessageRepo", "Listen failed for doctor conversations $doctorId.", e)
-                // Handle error - send empty list and close the channel
-                trySend(emptyList()) // <-- Use trySend
-                close(e) // Close the flow with the error
+
+                trySend(emptyList())
+                close(e)
                 return@addSnapshotListener
             }
 
             if (snapshot != null) {
-                // Map the documents to Conversation data class
+
                 val conversations = snapshot.documents.mapNotNull { doc ->
                     try {
                         doc.toObject(Conversation::class.java)
@@ -210,39 +213,33 @@ class MessageRepoUtils {
                     }
                 }
                 Log.d("MessageRepo", "Received ${conversations.size} conversations for doctor $doctorId")
-                // Emit the new list of conversations
-                trySend(conversations) // <-- Use trySend
+
+                trySend(conversations)
             } else {
-                // Snapshot is null but no error?
+
                 Log.w("MessageRepo", "Received null snapshot for doctor conversations $doctorId with no error.")
-                trySend(emptyList()) // Safely emit empty list
+                trySend(emptyList())
             }
         }
 
-        // This block keeps the flow alive as long as there are collectors.
-        // When the flow is cancelled or finishes, the awaitClose block is executed.
-        awaitClose { // <-- Use awaitClose
+
+        awaitClose {
             Log.d("MessageRepo", "Stopping snapshot listener for doctor conversations $doctorId")
-            registration.remove() // <-- Remove the listener when the flow is no longer collected
+            registration.remove()
         }
     }
 
-    /**
-     * Gets a real-time stream of a single conversation for a patient.
-     *
-     * @param patientId The UID of the patient.
-     * @return A Flow emitting a single Conversation object or null.
-     */
-    fun getConversationForPatient(patientId: String): Flow<Conversation?> = callbackFlow { // <-- Use callbackFlow
+
+    fun getConversationForPatient(patientId: String): Flow<Conversation?> = callbackFlow {
         val conversationRef = firestore.collection("conversations").document(patientId)
 
         // Add the snapshot listener
         val registration = conversationRef.addSnapshotListener { snapshot, e ->
             if (e != null) {
                 Log.w("MessageRepo", "Listen failed for patient conversation $patientId.", e)
-                // Handle error - send null and close the channel
-                trySend(null) // Safely emit null
-                close(e) // Close the flow with the error
+
+                trySend(null)
+                close(e)
                 return@addSnapshotListener
             }
 
@@ -250,22 +247,21 @@ class MessageRepoUtils {
                 try {
                     val conversation = snapshot.toObject(Conversation::class.java)
                     Log.d("MessageRepo", "Received conversation update for patient $patientId")
-                    trySend(conversation) // Safely emit the conversation object
+                    trySend(conversation)
                 } catch (e: Exception) {
                     Log.e("MessageRepo", "Failed to parse patient conversation $patientId: ${e.message}", e)
-                    trySend(null) // Safely emit null on parsing error
+                    trySend(null)
                 }
             } else {
                 Log.d("MessageRepo", "Conversation document does not exist for patient $patientId")
-                trySend(null) // Safely emit null if the document doesn't exist
+                trySend(null)
             }
         }
 
-        // This block keeps the flow alive as long as there are collectors.
-        // When the flow is cancelled or finishes, the awaitClose block is executed.
+
         awaitClose {
             Log.d("MessageRepo", "Stopping snapshot listener for patient conversation $patientId")
-            registration.remove() // Remove the listener when the flow is no longer collected
+            registration.remove()
         }
     }
 

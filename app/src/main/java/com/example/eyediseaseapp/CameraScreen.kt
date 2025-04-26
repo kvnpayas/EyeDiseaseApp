@@ -7,14 +7,6 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
-import android.media.ExifInterface
-import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
-import android.renderscript.Allocation
-import android.renderscript.Element
-import android.renderscript.RenderScript
-import android.renderscript.ScriptIntrinsicBlur
 import android.util.Log
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -35,15 +27,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,48 +70,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlurEffect
-import androidx.compose.ui.graphics.PaintingStyle
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.LineBreak.Companion.Paragraph
 import androidx.compose.ui.zIndex
+import androidx.navigation.NavController
 import com.example.eyediseaseapp.ui.theme.EyeDiseaseAppTheme
 import com.example.eyediseaseapp.util.DetectionResult
-import com.example.eyediseaseapp.util.ImageClassifierHelper
+import com.example.eyediseaseapp.util.ResultRepository
 import com.example.eyediseaseapp.util.UltralyticsAPIHelper
+import com.example.eyediseaseapp.util.UserUtils
 import com.example.eyediseaseapp.util.generatePdf
+import com.google.firebase.auth.FirebaseAuth
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
-import com.itextpdf.io.image.ImageDataFactory
-import com.itextpdf.io.source.ByteArrayOutputStream
-import com.itextpdf.kernel.pdf.PdfDocument
-import com.itextpdf.kernel.pdf.PdfName.Document
-import com.itextpdf.kernel.pdf.PdfWriter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import com.itextpdf.layout.Document
-import com.itextpdf.layout.element.Image
-import com.itextpdf.layout.element.Paragraph
-
 
 @Composable
-fun CameraScreen() {
+fun CameraScreen(navController: NavController) {
 
     val context = LocalContext.current
+
     // State to track if the camera permission is granted
     var hasCamPermission by remember { mutableStateOf(false) }
 
@@ -149,16 +121,18 @@ fun CameraScreen() {
 
     // Display the camera view if permission is granted, otherwise show a message
     if (hasCamPermission) {
-        CameraView()
+        CameraView(navController)
     } else {
         Text(text = "Camera permission denied")
     }
 }
 
 @Composable
-fun CameraView() {
+fun CameraView(navController: NavController) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val auth = FirebaseAuth.getInstance() // Get FirebaseAuth instance
+    val currentUserId = auth.currentUser?.uid
 
     var preview by remember { mutableStateOf<Preview?>(null) }
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
@@ -192,24 +166,51 @@ fun CameraView() {
     val ultralyticsAPIHelper = remember { UltralyticsAPIHelper(context) }
     var detections by remember { mutableStateOf<List<DetectionResult>>(emptyList()) }
 
-    val imageClassifierHelper = remember {
-        try {
-            ImageClassifierHelper(
-                context,
-                "eye_disease.tflite",
-                3
-            )
-        } catch (e: Exception) {
-            Log.e("ImageClassifierHelper", "Error initializing TFLite model", e)
-            null
-        }
-    }
     val localContext = LocalContext.current
     val overlayView = remember {
         OverlayView(localContext, null).apply {
             layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
     }
+
+    val resultRepository = remember { ResultRepository() } // <-- Instance of ResultRepository
+    val userRepository = remember { UserUtils() } // <-- Instance of UserRepository (or UserUtils)
+
+    // --- State for saving result ---
+    var isSaving by remember { mutableStateOf(false) } // State for saving loading
+    var saveErrorMessage by remember { mutableStateOf<String?>(null) } // State for save error
+    var saveSuccessMessage by remember { mutableStateOf<String?>(null) } // State for save success
+
+
+    // --- State for fetching user name for saving ---
+    var currentUserName by remember { mutableStateOf<String?>(null) } // Holds the current user's name
+    var isLoadingUserName by remember { mutableStateOf(true) } // True while fetching the name
+    var userNameError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentUserId) {
+        Log.d("CameraView", "LaunchedEffect: currentUserId changed to $currentUserId")
+        if (currentUserId != null) {
+            isLoadingUserName = true
+            userNameError = null
+            currentUserName = try {
+                val userProfile = userRepository.getUser(currentUserId) // <-- Fetch user profile
+                userProfile?.name // Get the name
+            } catch (e: Exception) {
+                userNameError = e.message ?: "Failed to load user name for saving."
+                Log.e("CameraView", "Error fetching user name for $currentUserId: ${e.message}", e)
+                null
+            } finally {
+                isLoadingUserName = false
+            }
+            Log.d("CameraView", "Fetched current user name: $currentUserName for UID: $currentUserId")
+        } else {
+            currentUserName = null
+            isLoadingUserName = false
+            userNameError = "User not logged in."
+            Log.d("CameraView", "User ID is null, resetting user name state.")
+        }
+    }
+
 
     mediaPipeFaceMesh.listener = object : MediaPipeFaceMesh.FaceMeshListener {
         override fun onFaceMeshResult(
@@ -257,30 +258,6 @@ fun CameraView() {
                         bestConfidence = 0f
                         results = emptyList()
 
-//                        coroutineScope.launch {
-//                            try {
-//                                capturedImageBitmap = rotatedBitmap
-//                                Log.d("result", "Resukls: $results")
-//                                delay(5000) // Simulate processing delay
-//
-//                                if (imageClassifierHelper != null) {
-//                                    val classificationResults =
-//                                        imageClassifierHelper.classifyImage(rotatedBitmap)
-//                                    results = classificationResults
-//                                    bestClassIndex = classificationResults.indexOf(
-//                                        classificationResults.maxOrNull() ?: 0f
-//                                    )
-//                                    bestConfidence = classificationResults.maxOrNull() ?: 0f
-//                                } else {
-//                                    Log.e("CameraView", "ImageClassifierHelper is null")
-//                                }
-//
-//                            } catch (e: Exception) {
-//                                Log.e("CameraView", "Error processing image: ${e.message}", e)
-//                            } finally {
-//                                isLoading = false
-//                            }
-//                        }
                         coroutineScope.launch {
                             try {
                                 capturedImageBitmap = rotatedBitmap
@@ -770,64 +747,97 @@ fun CameraView() {
                             color = colorResource(id = R.color.darkPrimary),
                             fontSize = 16.sp,
                         )
-                        // Add mild, moderate, or severe selection here
-//                        var severity by remember { mutableStateOf("Mild") } // Default to mild
-//
-//                        Spacer(modifier = Modifier.height(16.dp))
-//
-//                        Row(
-//                            modifier = Modifier.fillMaxWidth(),
-//                            horizontalArrangement = Arrangement.SpaceEvenly
-//                        ) {
-//                            OutlinedButton(
-//                                onClick = { severity = "Mild" },
-//                                colors = ButtonDefaults.outlinedButtonColors(
-//                                    containerColor = if (severity == "Mild") colorResource(id = R.color.darkPrimary) else Color.Transparent,
-//                                    contentColor = if (severity == "Mild") Color.White else Color.Black
-//                                ),
-//                                border = BorderStroke(1.dp, Color.Gray)
-//                            ) {
-//                                Text("Mild")
-//                            }
-//
-//                            OutlinedButton(
-//                                onClick = { severity = "Moderate" },
-//                                colors = ButtonDefaults.outlinedButtonColors(
-//                                    containerColor = if (severity == "Moderate") colorResource(id = R.color.darkPrimary) else Color.Transparent,
-//                                    contentColor = if (severity == "Moderate") Color.White else Color.Black
-//                                ),
-//                                border = BorderStroke(1.dp, Color.Gray)
-//                            ) {
-//                                Text("Moderate")
-//                            }
-//
-//                            OutlinedButton(
-//                                onClick = { severity = "Severe" },
-//                                colors = ButtonDefaults.outlinedButtonColors(
-//                                    containerColor = if (severity == "Severe") colorResource(id = R.color.darkPrimary) else Color.Transparent,
-//                                    contentColor = if (severity == "Severe") Color.White else Color.Black
-//                                ),
-//                                border = BorderStroke(1.dp, Color.Gray)
-//                            ) {
-//                                Text("Severe")
-//                            }
-//                        }
 
+                        val resultMessage = classLabels.getOrNull(bestClassIndex) ?: "Unknown"
                         Spacer(modifier = Modifier.height(32.dp))
 
-                        Button(
-                            onClick = {
-                                generatePdf(
-                                    context,
-                                    capturedImageBitmap,
-                                    classLabels.getOrNull(bestClassIndex) ?: "Unknown",
-                                    bestConfidence,
-                                )
-                            },
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        ) {
-                            Text("Download PDF")
+                        if (!isSaving && saveErrorMessage == null && saveSuccessMessage == null) {
+                            Button(
+                                onClick = {
+                                    // Ensure we have a captured bitmap and user ID before saving
+                                    val bitmapToSave = capturedImageBitmap
+                                    val userIdToSave = currentUserId
+                                    val nameToSave = currentUserName // Get the fetched user name
+
+                                    if (bitmapToSave != null && userIdToSave != null) {
+                                        isSaving = true // Start saving loading
+                                        saveErrorMessage = null // Clear previous errors
+                                        saveSuccessMessage = null // Clear previous success
+
+                                        coroutineScope.launch { // Launch coroutine for saving
+                                            try {
+                                                val savedResult = resultRepository.savePatientResult(
+                                                    bitmap = bitmapToSave,
+                                                    result = resultMessage,
+                                                    confidence = bestConfidence.toDouble(), // Convert Float to Double
+                                                    patientName = nameToSave // Pass the fetched user name
+                                                )
+
+                                                navController.navigate(Screen.ResultHistory.route) {
+                                                    popUpTo(Screen.AuthCheck.route) { inclusive = true }
+
+
+                                                    launchSingleTop = true
+                                                }
+                                                Log.d("CameraView", "Result saved successfully: ${savedResult.documentId}")
+                                                saveSuccessMessage = "Result saved successfully!"
+                                                Toast.makeText(context, "Result saved successfully!", Toast.LENGTH_SHORT).show()
+
+                                            } catch (e: Exception) {
+                                                Log.e("CameraView", "Failed to save result: ${e.message}", e)
+                                                saveErrorMessage = "Failed to save result: ${e.message}"
+                                                Toast.makeText(context, "Failed to save result: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            } finally {
+                                                isSaving = false // Stop saving loading
+                                            }
+                                        }
+                                    } else {
+                                        // Handle cases where bitmap or user ID is missing (shouldn't happen if UI logic is correct)
+                                        Log.e("CameraView", "Cannot save result: Captured bitmap or user ID is null.")
+                                        saveErrorMessage = "Cannot save result. Please try again."
+                                    }
+                                },
+                                enabled = !isSaving && currentUserId != null && !isLoadingUserName // Disable while saving, user not logged in, or name is loading
+                            ) {
+                                if (isSaving) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White) // Show loading on button
+                                } else {
+                                    Text(
+                                        text = "Save Result",
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        textAlign = TextAlign.Center,
+                                        style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                                    )
+                                }
+                            }
+                        } else {
+                            if (isSaving) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Saving result...")
+                            } else if (saveErrorMessage != null) {
+                                Text("Save Failed: $saveErrorMessage", color = Color.Red) // Use MaterialTheme.colorScheme.error
+                            } else if (saveSuccessMessage != null) {
+                                Text("Result Saved!", color = Color.Green) // Use a success color
+                            }
                         }
+
+//                        Spacer(modifier = Modifier.height(32.dp))
+//
+//                        Button(
+//                            onClick = {
+//                                generatePdf(
+//                                    context,
+//                                    capturedImageBitmap,
+//                                    classLabels.getOrNull(bestClassIndex) ?: "Unknown",
+//                                    bestConfidence,
+//                                )
+//                            },
+//                            modifier = Modifier.align(Alignment.CenterHorizontally)
+//                        ) {
+//                            Text("Download PDF")
+//                        }
                     } else if (className == "Normal") {
                         Text(
                             text = "If you are experiencing any eye discomfort, vision changes, or have any concerns about your eye health, it is always recommended to consult with a qualified ophthalmologist for a comprehensive eye examination.",
@@ -864,59 +874,7 @@ fun rotateBitmap(context: Context, bitmap: Bitmap): Bitmap {
 }
 
 fun captureAndBlurScreenshot(context: Context, onBitmapReady: (Bitmap?) -> Unit) {
-    // Capture the current composable as a Bitmap
-    // Apply blur using RenderScript or other algorithm
-    // Return the blurred Bitmap using onBitmapReady
+
 }
 
-//fun generatePdf(context: Context, imageBitmap: Bitmap?, className: String, confidence: Float) {
-//    val fileName = "diagnosis_report_${System.currentTimeMillis()}.pdf"
-//    val filePath = File(
-//        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-//        fileName
-//    )
-//
-//    try {
-//        val writer = PdfWriter(FileOutputStream(filePath))
-//        val pdf = PdfDocument(writer)
-//        val document = Document(pdf)
-//
-//        // Add image to PDF
-//        if (imageBitmap != null) {
-//            val stream = ByteArrayOutputStream()
-//            imageBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-//            val imageData = ImageDataFactory.create(stream.toByteArray())
-//            val image = Image(imageData) // Correct Image creation
-//            image.scaleToFit(500f, 500f)
-//            document.add(image) // Correct usage
-//        }
-//
-//        // Add text to PDF
-//        document.add(Paragraph("Diagnosis: $className"))
-//        document.add(Paragraph("Confidence: ${String.format("%.2f", confidence * 100)}%"))
-//
-//        document.close()
-//
-//        // Optionally, show a toast message to indicate the PDF has been saved
-//        Toast.makeText(context, "PDF saved to Downloads", Toast.LENGTH_SHORT).show()
-//    } catch (e: IOException) {
-//        e.printStackTrace()
-//        Toast.makeText(context, "Error saving PDF", Toast.LENGTH_SHORT).show()
-//    }
-//}
-
-
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
-@Composable
-fun CameraScreenPreview() {
-    val hasCamPermission = true
-
-    EyeDiseaseAppTheme {
-        if (hasCamPermission) {
-            CameraView()
-        } else {
-            Text(text = "Camera permission denied")
-        }
-    }
-}
 

@@ -25,6 +25,7 @@ import java.util.Locale
 fun generatePdf(
     context: Context,
     imageBitmap: Bitmap?,
+    patientName: String?,
     className: String,
     confidence: Float,
 ) {
@@ -44,6 +45,7 @@ fun generatePdf(
             .setBold()
             .setTextAlignment(TextAlignment.CENTER)
         document.add(titleParagraph)
+
 
         // Add image to PDF
         if (imageBitmap != null) {
@@ -66,9 +68,16 @@ fun generatePdf(
             document.add(centeredImage)
         }
 
-        // Add text to PDF
+        if (!patientName.isNullOrBlank()) { // Check if name is not null or empty
+            val patientNameParagraph = Paragraph("Patient Name: $patientName")
+                .setBold()
+                .setMarginTop(12f)
+            document.add(patientNameParagraph)
+        }
+
+
         document.add(Paragraph("Detected Eye Disease: $className").setBold())
-        // Add date to PDF
+
         val currentDate = Date()
         val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val formattedDate = dateFormatter.format(currentDate)
@@ -85,28 +94,8 @@ fun generatePdf(
         )
 
 
-        // Severity
-//        var severityPercent = String()
-//        if (severity == "Mild") {
-//            severityPercent = "60%-80% (Mild Cases)"
-//        } else if (severity == "Moderate") {
-//            severityPercent = "80%-90% (Moderate Signs Detected- Immediate Attention Required)"
-//        } else {
-//            severityPercent = "90-98% (Severe cases- Urgent Checkup Needed)"
-//        }
-//        document.add(Paragraph(severityPercent).setBold().setMarginTop(30f))
-
-        // Eye Detection intro
         var eyeDetectIntro = "• The system has detected indications of $className"
-//        if (severity == "Mild") {
-//            eyeDetectIntro = "• The system has detected mild indications of $className\""
-//        } else if (severity == "Moderate") {
-//            eyeDetectIntro =
-//                "• A moderate level of $className is detected. This may indicate an increased risk of progression."
-//        } else {
-//            eyeDetectIntro =
-//                "• A significant presence of $className is detected. Immediate medical attention is strongly recommended."
-//        }
+
         val paragraphEyeDetectIntro = Paragraph(eyeDetectIntro)
         paragraphEyeDetectIntro.setMarginLeft(16f)
         paragraphEyeDetectIntro.setMarginTop(8f)
@@ -115,13 +104,7 @@ fun generatePdf(
 
         // Recommendation
         var recommendation = "• Recommendations:"
-//        if (severity == "Mild") {
-//            recommendation = "• Recommendations:"
-//        } else if (severity == "Moderate") {
-//            recommendation = "• Must-Do Actions:"
-//        } else {
-//            recommendation = "• Action Plan:"
-//        }
+
         val paragraphRecommendation = Paragraph(recommendation)
         paragraphRecommendation.setMarginLeft(16f)
         paragraphRecommendation.setBold()
@@ -153,37 +136,6 @@ fun generatePdf(
                 "Continue to protect your eyes from significant trauma or injury."
             )
         }
-//        recommendationInfo = listOf(
-//            "Maintain a healthy lifestyle and proper eye hygiene.",
-//            "Consult an optometrist as soon as possible for a more detailed evaluation.",
-//            "Avoid prolonged exposure to bright lights or screens.",
-//            "Adjust your screen time and ensure proper eye rest.",
-//            "Implement a diet rich in Vitamin A (e.g., carrots, leafy greens, and fish).",
-//            "Follow-up: A professional consultation is advised within 1-3 months."
-//        )
-//        if (severity == "Mild") {
-//            recommendationInfo = listOf(
-//                "Maintain a healthy lifestyle and proper eye hygiene.",
-//                "Regular eye exercises and protective eyewear may help slow progression.",
-//                "Monitor symptoms for any noticeable changes, such as blurry vision or discomfort.",
-//                "Follow-up: Consider scheduling an eye checkup within 6-12 months for further evaluation."
-//            )
-//        } else if (severity == "Moderate") {
-//            recommendationInfo = listOf(
-//                "Consult an optometrist as soon as possible for a more detailed evaluation.",
-//                "Adjust your screen time and ensure proper eye rest.",
-//                "Avoid prolonged exposure to bright lights or screens.",
-//                "Implement a diet rich in Vitamin A (e.g., carrots, leafy greens, and fish).",
-//                "Follow-up: A professional consultation is advised within 1-3 months."
-//            )
-//        } else {
-//            recommendationInfo = listOf(
-//                "Schedule an urgent appointment with an ophthalmologist for a comprehensive eye exam.",
-//                "Possible medical or surgical intervention may be required, depending on severity.",
-//                "Avoid self-medication and over-the-counter eye drops without professional advice.",
-//                "Follow-up: Seek medical attention within 1-2 weeks to prevent further vision impairment."
-//            )
-//        }
 
         recommendationInfo.forEach { info ->
             val bulletPoint = "o $info"
@@ -267,7 +219,6 @@ fun generatePdf(
 
         document.close()
 
-        // Optionally, show a toast message to indicate the PDF has been saved
         Toast.makeText(context, "PDF saved to Downloads", Toast.LENGTH_SHORT).show()
     } catch (e: IOException) {
         e.printStackTrace()

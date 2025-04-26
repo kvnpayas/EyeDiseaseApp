@@ -5,10 +5,14 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.Timestamp // Firestore Timestamp type
-import kotlinx.coroutines.tasks.await // For using await() on Firebase Tasks
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
-import java.util.UUID // To generate a unique ID for each result entry
+import java.util.UUID
 
 
 data class PatientResult(
@@ -26,30 +30,25 @@ data class PatientResult(
     val consult: Boolean = false
 )
 
+data class ConsultedPatient(
+    val userId: String,
+    val patientName: String?
+)
+
 // Repository class to handle data operations
 class ResultRepository {
 
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val storage = FirebaseStorage.getInstance()
+    private val userUtils = UserUtils()
 
-    /**
-     * Saves the patient result metadata and image to Firebase.
-     * Requires the user to be authenticated.
-     *
-     * @param bitmap The image bitmap (should be the one displayed, possibly with bounding boxes).
-     * @param result The classification result message ("Cataract", "Glaucoma", etc.).
-     * @param confidence The confidence level of the result.
-     * @param patientName Optional: The name of the patient if different from the logged-in user.
-     * @return The saved PatientResult object if successful.
-     * @throws IllegalStateException if user is not authenticated.
-     * @throws Exception if saving to Storage or Firestore fails.
-     */
+
     suspend fun savePatientResult(
         bitmap: Bitmap,
         result: String,
         confidence: Double,
-        patientName: String? = null // Add this parameter if you have a name input
+        patientName: String? = null
     ): PatientResult {
         // Ensure user is authenticated
         val userId = auth.currentUser?.uid
@@ -67,9 +66,9 @@ class ResultRepository {
         val imageFileName = "results/${userId}/${timestamp.toDate().time}_${resultId}.jpg"
         val imageRef = storageRef.child(imageFileName)
 
-        // Convert bitmap to byte array for upload
+
         val baos = ByteArrayOutputStream()
-        // Use JPEG compression. Quality 90 is a good balance. Adjust if needed.
+
         bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos)
         val imageData = baos.toByteArray()
 
@@ -87,13 +86,11 @@ class ResultRepository {
             // 2. Save Metadata to Firestore
             val patientResult = PatientResult(
                 userId = userId,
-                patientName = patientName, // Use the provided patient name
                 result = result,
                 confidence = confidence,
                 timestamp = timestamp,
                 imageUrl = imageUrl,
 
-                // Add bounding box data here if you have it structured
             )
 
             // Save the result metadata in a collection (e.g., "patient_results")
@@ -112,14 +109,11 @@ class ResultRepository {
             patientResult
 
         } catch (e: Exception) {
-            // Log the error and re-throw it so the caller can handle the failure
             Log.e(
                 "ResultRepository",
                 "Failed to save patient result for UID $userId, Result ID $resultId: ${e.message}",
                 e
             )
-            // Optional: Clean up the partially uploaded image from Storage if Firestore save fails?
-            // This adds complexity. For a basic implementation, just letting it fail might be ok initially.
             throw e
         }
     }
@@ -134,11 +128,11 @@ class ResultRepository {
                     "consult" to true,
                     "conversationId" to conversationId
                 )
-            ).await() // Use update to modify specific fields
+            ).await()
             Log.d("ResultRepo", "Consult status updated successfully for Result ID: $resultId")
         } catch (e: Exception) {
             Log.e("ResultRepo", "Failed to update consult status for Result ID $resultId: ${e.message}", e)
-            throw e // Re-throw the exception
+            throw e
         }
     }
 
@@ -197,6 +191,76 @@ class ResultRepository {
         }
     }
 
+    suspend fun getConsultedPatients(): List<ConsultedPatient> {
+        return try {
+            Log.d("ResultRepo", "Fetching list of consulted patients...")
+            // Query for all results where consultation was initiated
+            val querySnapshot = firestore.collection("patient_results")
+                .whereEqualTo("consult", true)
+                .get()
+                .await()
+
+            // Group results by userId to get unique patients
+            val uniqueUserIds = querySnapshot.documents.mapNotNull { it.getString("userId") }.distinct()
+
+            Log.d("ResultRepo", "Found ${uniqueUserIds.size} unique user IDs with initiated consultations.")
+
+            // For each unique userId, fetch their name from the 'users' collection
+            val consultedPatientsList = mutableListOf<ConsultedPatient>()
+            for (userId in uniqueUserIds) {
+                // Use UserUtils to get the user's name
+                val userName = userUtils.getUserName(userId)
+                consultedPatientsList.add(ConsultedPatient(userId = userId, patientName = userName))
+                Log.d("ResultRepo", "Fetched name for UID $userId: $userName")
+            }
+
+            Log.d("ResultRepo", "Finished fetching names for consulted patients.")
+            consultedPatientsList
+
+        } catch (e: Exception) {
+            Log.e("ResultRepo", "Error fetching consulted patients list: ${e.message}", e)
+            throw e
+        }
+    }
+
+
+    fun getConsultedResultsForPatient(patientId: String): Flow<List<PatientResult>> = callbackFlow {
+        val resultsQuery = firestore.collection("patient_results")
+            .whereEqualTo("userId", patientId)
+            .whereEqualTo("consult", true) // Filter only consulted results
+            .orderBy("timestamp", Query.Direction.DESCENDING) // Order by most recent first
+
+        val registration = resultsQuery.addSnapshotListener { snapshot, e ->
+            if (e != null) {
+                Log.w("ResultRepo", "Listen failed for consulted results for patient $patientId.", e)
+                trySend(emptyList())
+                close(e)
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null) {
+                val results = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(PatientResult::class.java)?.copy(documentId = doc.id) // Copy document ID
+                    } catch (e: Exception) {
+                        Log.e("ResultRepo", "Failed to parse consulted result document ${doc.id}: ${e.message}", e)
+                        null
+                    }
+                }
+                Log.d("ResultRepo", "Received ${results.size} consulted results for patient $patientId")
+                trySend(results)
+            } else {
+                Log.w("ResultRepo", "Received null snapshot for consulted results for patient $patientId with no error.")
+                trySend(emptyList())
+            }
+        }
+
+        awaitClose {
+            Log.d("ResultRepo", "Stopping snapshot listener for consulted results for patient $patientId")
+            registration.remove()
+        }
+    }
+
     suspend fun deletePatientResult(documentId: String, storagePath: String) {
         val resultDocRef = firestore.collection("patient_results").document(documentId)
         val storageRef = storage.reference
@@ -233,7 +297,4 @@ class ResultRepository {
         }
     }
 
-
-    // You might add other functions here, like getting results for a user
-    // suspend fun getResultsForUser(userId: String): List<PatientResult> { ... }
 }

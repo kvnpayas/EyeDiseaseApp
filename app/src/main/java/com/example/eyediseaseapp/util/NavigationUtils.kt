@@ -1,26 +1,25 @@
 package com.example.eyediseaseapp.util
 
 import android.util.Log
-import com.example.eyediseaseapp.Screen // Import your Screen sealed class
-import com.google.firebase.auth.FirebaseAuth
+import com.example.eyediseaseapp.Screen
 import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await // For using await
+import kotlinx.coroutines.tasks.await
 
 object NavigationUtils {
 
     suspend fun userDocumentExists(userId: String): Boolean {
         val db = FirebaseFirestore.getInstance()
         return try {
-            Log.d("FirestoreDebug", "Checking doc existence for UID: $userId") // Log entry
+            Log.d("FirestoreDebug", "Checking doc existence for UID: $userId")
             val docRef = db.collection("users").document(userId)
-            val document = docRef.get().await() // <-- Execution might stop here if rules deny read
+            val document = docRef.get().await()
 
             val exists = document.exists()
-            Log.d("FirestoreDebug", "Doc existence check result for $userId: $exists") // Log result
+            Log.d("FirestoreDebug", "Doc existence check result for $userId: $exists")
             exists
         } catch (e: Exception) {
-            Log.e("FirestoreDebug", "Error checking doc existence for UID $userId: ${e.message}", e) // Log error
-            false // Assume it doesn't exist or couldn't be verified
+            Log.e("FirestoreDebug", "Error checking doc existence for UID $userId: ${e.message}", e)
+            false
         }
     }
 
@@ -29,29 +28,28 @@ object NavigationUtils {
         return try {
             val docRef = db.collection("users").document(userId)
             val document = docRef.get().await()
-            Log.d("FirestoreUtils", "Doc exists for $userId: ${document.exists()}") // Use a distinct tag or include UID
+            Log.d("FirestoreUtils", "Doc exists for $userId: ${document.exists()}")
             if (document.exists()) {
                 val role = document.getString("role")
-                Log.d("FirestoreUtils", "Role for $userId: $role") // Use a distinct tag or include UID
+                Log.d("FirestoreUtils", "Role for $userId: $role")
                 when (role) {
                     "admin" -> Screen.DoctorHome
                     "user" -> Screen.PatientHome
                     else -> {
                         println("fetchUserRole: User $userId found, but role '$role' is unknown or missing.")
-                        // If role is missing or invalid, treat as needing sign-in or default user?
-                        // Returning SignIn guides them back, or default to PatientHome if that's safer
-                        Screen.SignIn // Or Screen.PatientHome depending on desired fallback
+
+                        Screen.SignIn
                     }
                 }
             } else {
                 println("fetchUserRole: User document not found for UID: $userId. This user was authenticated but no profile exists.")
-                // If the document doesn't exist, the user wasn't fully onboarded.
-                Screen.SignIn // Require them to go through sign-up/onboarding again?
+
+                Screen.SignIn
             }
         } catch (e: Exception) {
             println("fetchUserRole: Error fetching role for UID $userId: ${e.message}")
             e.printStackTrace()
-            // On error reading DB, safest might be to go back to sign-in or an error screen
+
             Screen.SignIn
         }
     }
