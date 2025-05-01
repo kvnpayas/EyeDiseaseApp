@@ -3,6 +3,7 @@ package com.example.eyediseaseapp
 import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
@@ -119,36 +122,79 @@ fun AppDrawerContent(
 
     ModalDrawerSheet {
         // --- Drawer Header (App Icon and Title) ---
-        Row(
+        Box( // Use a Box to position the close button
             modifier = Modifier
                 .fillMaxWidth()
-                .background(colorResource(id = R.color.primary))
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .background(colorResource(id = R.color.primary)) // Use your primary color
+                .padding(16.dp)
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.eye_logo),
-                contentDescription = "App Icon",
+            Row(
                 modifier = Modifier
-                    .size(100.dp)
-                    .padding(end = 16.dp)
-            )
-            Column {
-                Text(
-                    text = "Welcome",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    fontSize = 24.sp
+                    .fillMaxWidth()
+                    .background(colorResource(id = R.color.primary))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.eye_logo),
+                    contentDescription = "App Icon",
+                    modifier = Modifier
+                        .size(100.dp)
+                        .padding(end = 16.dp)
                 )
+                Column {
+                    Text(
+                        text = "Welcome",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 24.sp
+                    )
 
-                when {
-                    isLoadingName -> Text("Loading name...", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
-                    nameError != null -> Text("Error loading name", color = Color.Red.copy(alpha = 0.7f), fontSize = 14.sp)
-                    userName != null -> Text(userName!!, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp) // Display the fetched name
-                    else -> Text("Guest", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp) // Default for logged out or no name
+                    when {
+                        isLoadingName -> Text(
+                            "Loading name...",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 14.sp
+                        )
+
+                        nameError != null -> Text(
+                            "Error loading name",
+                            color = Color.Red.copy(alpha = 0.7f),
+                            fontSize = 14.sp
+                        )
+
+                        userName != null -> Text(
+                            userName!!,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 14.sp
+                        ) // Display the fetched name
+                        else -> Text(
+                            "Guest",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 14.sp
+                        ) // Default for logged out or no name
+                    }
                 }
+
             }
 
+            // --- Close Button ---
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        drawerState.close() // Close the drawer
+                    }
+                },
+                modifier = Modifier.align(Alignment.TopEnd) // Position in the top-right corner
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close, // Use the Close icon
+                    contentDescription = "Close Drawer", // Accessibility description
+                    tint = Color.White // Set icon color to white
+                )
+            }
         }
 
         Divider()

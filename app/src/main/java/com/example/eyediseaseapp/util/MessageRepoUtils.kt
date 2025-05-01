@@ -265,4 +265,107 @@ class MessageRepoUtils {
         }
     }
 
+    suspend fun createCallNotification(
+        patientId: String,
+        doctorId: String,
+        channelName: String,
+        rtcToken: String
+    ) {
+        val notificationRef = firestore.collection("call_notifications").document(patientId)
+
+        val callNotification = CallNotification(
+            patientId = patientId,
+            doctorId = doctorId,
+            channelName = channelName,
+            rtcToken = rtcToken,
+            timestamp = Timestamp.now(),
+            status = "calling" // Initial status
+        )
+
+         try {
+            Log.d("MessageRepo", "Creating call notification for patient $patientId from doctor $doctorId")
+            // Use set() to create or overwrite the document with patientId as the ID
+            notificationRef.set(callNotification).await()
+            Log.d("MessageRepo", "Call notification document created for patient $patientId")
+        } catch (e: Exception) {
+            Log.e("MessageRepo", "Failed to create call notification for patient $patientId: ${e.message}", e)
+            throw e // Re-throw the exception
+        }
+    }
+
+    /**
+     * Gets a real-time stream of the call notification document for a specific patient.
+     *
+     * @param patientId The UID of the patient.
+     * @return A Flow emitting a single CallNotification object or null.
+     */
+    fun getCallNotificationForPatient(patientId: String): Flow<CallNotification?> = callbackFlow {
+        val notificationRef = firestore.collection("call_notifications").document(patientId)
+
+        // Add the snapshot listener
+        val registration = notificationRef.addSnapshotListener { snapshot, e ->
+            if (e != null) {
+                Log.w("MessageRepo", "Listen failed for call notification for patient $patientId.", e)
+                trySend(null) // Safely emit null on error
+                close(e) // Close the flow with the error
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null && snapshot.exists()) {
+                try {
+                    val notification = snapshot.toObject(CallNotification::class.java)
+                    Log.d("MessageRepo", "Received call notification update for patient $patientId: ${notification?.status}")
+                    trySend(notification) // Safely emit the notification object
+                } catch (e: Exception) {
+                    Log.e("MessageRepo", "Failed to parse call notification for patient $patientId: ${e.message}", e)
+                    trySend(null) // Safely emit null on parsing error
+                }
+            } else {
+                Log.d("MessageRepo", "Call notification document does not exist for patient $patientId")
+                trySend(null) // Safely emit null if the document doesn't exist
+            }
+        }
+
+        // This block keeps the flow alive as long as there are collectors.
+        // When the flow is cancelled or finishes, the awaitClose block is executed.
+        awaitClose {
+            Log.d("MessageRepo", "Stopping snapshot listener for call notification for patient $patientId")
+            registration.remove() // Remove the listener when the flow is no longer collected
+        }
+    }
+
+    /**
+     * Deletes a call notification document from Firestore.
+     * This is called when the call is accepted, declined, or ended.
+     *
+     * @param patientId The UID of the patient whose notification document to delete.
+     * @throws Exception if the operation fails.
+     */
+    suspend fun deleteCallNotification(patientId: String) {
+        val notificationRef = firestore.collection("call_notifications").document(patientId)
+
+         try {
+            Log.d("MessageRepo", "Deleting call notification for patient $patientId")
+            notificationRef.delete().await()
+            Log.d("MessageRepo", "Call notification document deleted for patient $patientId")
+        } catch (e: Exception) {
+            Log.e("MessageRepo", "Failed to delete call notification for patient $patientId: ${e.message}", e)
+            throw e // Re-throw the exception
+        }
+
+    }
+
+    suspend fun updateCallNotificationStatus(patientId: String, status: String) {
+        val notificationRef = firestore.collection("call_notifications").document(patientId)
+
+        try {
+            Log.d("MessageRepo", "Updating call notification status for patient $patientId to: $status")
+            notificationRef.update("status", status).await()
+            Log.d("MessageRepo", "Call notification status updated successfully for patient $patientId")
+        } catch (e: Exception) {
+            Log.e("MessageRepo", "Failed to update call notification status for patient $patientId: ${e.message}", e)
+            throw e // Re-throw the exception
+        }
+    }
+
 }

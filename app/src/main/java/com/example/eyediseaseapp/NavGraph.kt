@@ -14,6 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.example.eyediseaseapp.util.CallNotification
+import com.example.eyediseaseapp.util.MessageRepoUtils
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 
 sealed class Screen(val route: String) {
@@ -45,6 +48,11 @@ sealed class Screen(val route: String) {
         fun createRoute(conversationId: String) = "conversation_detail/$conversationId"
     }
 
+    object VideoCall : Screen("video_call/{conversationId}") {
+        const val CONVERSATION_ID_KEY = "conversationId" // Use the same key as ConversationDetail for consistency
+        fun createRoute(conversationId: String) = "video_call/$conversationId"
+    }
+
     fun withArgs(vararg args: String): String {
         return buildString {
             append(route)
@@ -62,6 +70,128 @@ fun NavGraph(navController: NavHostController,
 ) {
     val localCoroutineScope = rememberCoroutineScope()
     val currentScope = scope ?: localCoroutineScope
+
+    val auth = FirebaseAuth.getInstance()
+    val currentUserId = auth.currentUser?.uid
+
+    // --- State for incoming call notification ---
+    var incomingCallNotification by remember { mutableStateOf<CallNotification?>(null) }
+    val messageRepository = remember { MessageRepoUtils() }
+
+    var currentUserRole by remember { mutableStateOf<String?>(null) } // Holds the fetched role ('user', 'admin', or null)
+    var isLoadingRole by remember { mutableStateOf(true) } // True while fetching the role
+    var roleError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentUserId) {
+        Log.d("NavGraph", "LaunchedEffect: currentUserId changed to $currentUserId for role fetch.")
+        if (currentUserId != null) {
+            isLoadingRole = true
+            roleError = null
+            currentUserRole = try {
+                val destinationScreen = fetchUserRole(currentUserId)
+                when (destinationScreen) {
+                    Screen.PatientHome -> "user"
+                    Screen.DoctorHome -> "admin"
+                    else -> null
+                }
+            } catch (e: Exception) {
+                roleError = e.message ?: "Failed to load user role."
+                Log.e("NavGraph", "Error fetching user role for $currentUserId: ${e.message}", e)
+                null
+            } finally {
+                isLoadingRole = false
+            }
+            Log.d("NavGraph", "Fetched current user role: $currentUserRole for UID: $currentUserId")
+        } else {
+            currentUserRole = null
+            isLoadingRole = false
+            roleError = "User not logged in."
+            Log.d("NavGraph", "Current User ID is null, cannot fetch role.")
+        }
+    }
+
+    LaunchedEffect(currentUserId, currentUserRole) { // Re-run if user or role changes
+        Log.d("NavGraph", "LaunchedEffect (Call Listener): currentUserId: $currentUserId, currentUserRole: $currentUserRole")
+        if (currentUserId != null && currentUserRole == "user") {
+            Log.d("NavGraph", "User is a patient, starting call notification listener for UID: $currentUserId")
+            // Start collecting the notification document for the current patient
+            messageRepository.getCallNotificationForPatient(currentUserId).collect { notification ->
+                Log.d("NavGraph", "Received call notification update: $notification")
+                // Update the state. The modal will be shown if status is "calling".
+                incomingCallNotification = notification
+            }
+        } else {
+            // If user logs out or is not a patient, clear the notification state
+            incomingCallNotification = null
+            if (currentUserId != null) {
+                Log.d("NavGraph", "User is not a patient (role: $currentUserRole), stopping call notification listener.")
+            } else {
+                Log.d("NavGraph", "User ID is null, stopping call notification listener.")
+            }
+        }
+    }
+
+    if (incomingCallNotification != null && incomingCallNotification?.status == "calling") {
+        IncomingCallDialog(
+            callNotification = incomingCallNotification!!, // Pass the notification data
+            onAccept = { notification ->
+                Log.d("NavGraph", "Call Accepted for patient ${notification.patientId}. Navigating to VideoCall.")
+                currentScope.launch { // Use the local scope for coroutines
+                    try {
+                        // 1. Update the notification status to "accepted"
+                        messageRepository.updateCallNotificationStatus(notification.patientId, "accepted")
+                        Log.d("NavGraph", "Call notification status updated to 'accepted' for patient ${notification.patientId}")
+
+                        // 2. Navigate to the VideoCallScreen
+                        // Pass the patientId (which is the conversationId)
+                        navController.navigate(Screen.VideoCall.createRoute(notification.patientId)) {
+                            launchSingleTop = true // Avoid multiple copies
+                        }
+                        // The dialog will be dismissed because incomingCallNotification will be updated by the listener
+                        // to null once the status changes from "calling".
+
+                    } catch (e: Exception) {
+                        Log.e("NavGraph", "Failed to accept call and update status: ${e.message}", e)
+                        // Handle error (e.g., show a Toast)
+                        // Keep the dialog open or dismiss it based on desired UX on error
+                        incomingCallNotification = null // Dismiss dialog on error
+                    }
+                }
+            },
+            onReject = { notification ->
+                Log.d("NavGraph", "Call Rejected for patient ${notification.patientId}. Updating notification status.")
+                currentScope.launch { // Use the local scope for coroutines
+                    try {
+                        // 1. Update the notification status to "rejected"
+                        messageRepository.deleteCallNotification(notification.patientId)
+                        Log.d("NavGraph", "Call notification status updated to 'rejected' for patient ${notification.patientId}")
+
+                        // The dialog will be dismissed because incomingCallNotification will be updated by the listener
+                        // to null once the status changes from "calling".
+
+                    } catch (e: Exception) {
+                        Log.e("NavGraph", "Failed to reject call and update status: ${e.message}", e)
+                        // Handle error (e.g., show a Toast)
+                        // Keep the dialog open or dismiss it based on desired UX on error
+                        incomingCallNotification = null // Dismiss dialog on error
+                    }
+                }
+            },
+            onDismiss = {
+                // Handle dismissal if the user taps outside the dialog.
+                // You might want to treat this as a missed call after a timeout,
+                // but for now, we'll just dismiss the dialog without changing status immediately.
+                // The listener will eventually update the status if the doctor ends the call.
+                // If the doctor doesn't end it, the notification will remain "calling" until the patient accepts/rejects or app is closed/killed.
+                Log.d("NavGraph", "Incoming call dialog dismissed by user.")
+                // We don't clear incomingCallNotification here on manual dismiss,
+                // as the listener should be the source of truth for clearing it when the status changes.
+                // If you want manual dismiss to also update status, call updateCallNotificationStatus("missed") here.
+                // For simplicity, we'll rely on the doctor ending the call or the patient accepting/rejecting.
+            }
+        )
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.AuthCheck.route
@@ -328,6 +458,31 @@ fun NavGraph(navController: NavHostController,
             } else {
                 Log.e("NavGraph", "ConversationDetailScreen: Missing conversationId argument!")
                  navController.popBackStack()
+            }
+        }
+
+        composable(
+            route = Screen.VideoCall.route, // Route with conversationId argument
+            arguments = listOf(navArgument(Screen.VideoCall.CONVERSATION_ID_KEY) {
+                type = NavType.StringType // Specify argument type
+            })
+        ) { backStackEntry ->
+            // Get the conversationId argument value
+            val conversationId = backStackEntry.arguments?.getString(Screen.VideoCall.CONVERSATION_ID_KEY)
+            if (conversationId != null) {
+                // Pass conversationId and other necessary parameters
+                VideoCallScreen(
+                    navController = navController, // Pass navController
+                    conversationId = conversationId, // Pass the conversation ID
+                    // Pass drawerState and scope if needed (though likely not needed for a full-screen call)
+                    // drawerState = drawerState,
+                    // scope = currentScope
+                ) // You need to create this composable
+            } else {
+                // Handle case where conversationId is missing
+                Log.e("NavGraph", "VideoCallScreen: Missing conversationId argument!")
+                // Navigate back or show an error
+                navController.popBackStack() // Go back if essential argument is missing
             }
         }
     }

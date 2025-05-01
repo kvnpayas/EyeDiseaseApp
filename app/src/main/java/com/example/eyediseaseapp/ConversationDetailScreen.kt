@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.material3.ButtonDefaults
 import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.material3.DrawerState // Import if using sidebar
 import kotlinx.coroutines.CoroutineScope // Import if using sidebar
@@ -32,12 +33,17 @@ import java.text.SimpleDateFormat // For date formatting
 import java.util.Locale // For date formatting
 import android.util.Log // For logging
 import android.widget.Toast // For showing Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.ui.platform.LocalContext
 import com.example.eyediseaseapp.util.MessageRepoUtils
 import com.example.eyediseaseapp.util.Message
 import com.example.eyediseaseapp.util.NavigationUtils
 import com.example.eyediseaseapp.util.PatientResult
 import com.example.eyediseaseapp.util.ResultRepository
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 
 @Composable
 fun ConversationDetailScreen(
@@ -61,12 +67,14 @@ fun ConversationDetailScreen(
 
     // --- State for fetching messages ---
     // Collect the stream of messages for this conversation
-    val messagesState = messageRepository.getMessages(conversationId).collectAsState(initial = emptyList())
+    val messagesState =
+        messageRepository.getMessages(conversationId).collectAsState(initial = emptyList())
     val messages = messagesState.value // The list of messages
 
     // --- State for fetching conversation details (for header) ---
     // Collect the stream of the single conversation document
-    val conversationState = messageRepository.getConversationForPatient(conversationId).collectAsState(initial = null)
+    val conversationState =
+        messageRepository.getConversationForPatient(conversationId).collectAsState(initial = null)
     val conversation = conversationState.value // The conversation details (or null)
 
     // --- State for message input ---
@@ -79,6 +87,8 @@ fun ConversationDetailScreen(
     var roleError by remember { mutableStateOf<String?>(null) }
 
     var selectedResultForViewDialog by remember { mutableStateOf<PatientResult?>(null) }
+
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(currentUserId) {
         Log.d("ConversationDetail", "LaunchedEffect: currentUserId changed to $currentUserId")
@@ -93,18 +103,28 @@ fun ConversationDetailScreen(
                     Screen.DoctorHome -> "admin" // Use DoctorHomeScreen route name
                     else -> {
                         // If fetchUserRole returns SignIn or null, the role is not recognized or doc is missing
-                        Log.w("ConversationDetail", "Fetched unknown or missing role for $currentUserId, destination: $destinationScreen")
+                        Log.w(
+                            "ConversationDetail",
+                            "Fetched unknown or missing role for $currentUserId, destination: $destinationScreen"
+                        )
                         null // Treat as unknown role
                     }
                 }
             } catch (e: Exception) {
                 roleError = e.message ?: "Failed to load user role."
-                Log.e("ConversationDetail", "Error fetching user role for $currentUserId: ${e.message}", e)
+                Log.e(
+                    "ConversationDetail",
+                    "Error fetching user role for $currentUserId: ${e.message}",
+                    e
+                )
                 null
             } finally {
                 isLoadingRole = false
             }
-            Log.d("ConversationDetail", "Fetched current user role: $currentUserRole for UID: $currentUserId")
+            Log.d(
+                "ConversationDetail",
+                "Fetched current user role: $currentUserRole for UID: $currentUserId"
+            )
         } else {
             currentUserRole = null
             isLoadingRole = false
@@ -132,19 +152,115 @@ fun ConversationDetailScreen(
             val headerText = when {
                 isLoadingRole || conversation == null -> "Loading..." // Show loading if role or conversation is loading
                 roleError != null -> "Error loading name" // Show error if role fetch failed
-                currentUserRole == "user" -> conversation.doctorName ?: "Doctor" // Patient sees Doctor's name
-                currentUserRole == "admin" -> conversation.patientName ?: "Patient" // Doctor sees Patient's name
+                currentUserRole == "user" -> conversation.doctorName
+                    ?: "Doctor" // Patient sees Doctor's name
+                currentUserRole == "admin" -> conversation.patientName
+                    ?: "Patient" // Doctor sees Patient's name
                 else -> "Conversation" // Default for unknown role
             }
 
-            Text(
-                text = headerText, // Use the determined header text
-                color = colorResource(id = R.color.darkPrimary),
-                fontSize = 30.sp,
-                textAlign = TextAlign.Center,
-                style = TextStyle(fontWeight = FontWeight.ExtraBold),
-                modifier = Modifier.padding(top = 100.dp)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter) // Align to the bottom of the parent
+                    .padding(bottom = 16.dp, top = 100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             )
+            {
+                Text(
+                    text = headerText, // Use the determined header text
+                    color = colorResource(id = R.color.darkPrimary),
+
+                    fontSize = 30.sp,
+                    textAlign = TextAlign.Center,
+                    style = TextStyle(fontWeight = FontWeight.ExtraBold),
+                )
+                if (currentUserRole == "admin") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                val doctorId = currentUserId
+                                val patientId = conversationId // conversationId is the patientId
+
+                                if (doctorId != null && patientId.isNotBlank()) {
+                                    coroutineScope.launch {
+                                        try {
+                                            // 1. Fetch Agora channel details from Firestore
+                                            val firestore = FirebaseFirestore.getInstance()
+                                            val channelDocRef = firestore.collection("channel_name_id").document("static_channel_name")
+                                            val document = channelDocRef.get().await()
+
+                                            if (document != null && document.exists()) {
+                                                val channelName = document.getString("channel_name")
+                                                val rtcToken = document.getString("token")
+
+                                                if (!channelName.isNullOrBlank() && !rtcToken.isNullOrBlank()) {
+                                                    Log.d("ConversationDetail", "Fetched channelName: $channelName, rtcToken: ${rtcToken.take(5)}...")
+
+                                                    // 2. Create the call notification document in Firestore
+                                                    messageRepository.createCallNotification(
+                                                        patientId = patientId,
+                                                        doctorId = doctorId,
+                                                        channelName = channelName,
+                                                        rtcToken = rtcToken
+                                                    )
+                                                    Log.d("ConversationDetail", "Call notification created for patient $patientId.")
+
+                                                    // 3. Navigate to the VideoCallScreen (Doctor joins)
+                                                    Log.d("ConversationDetail", "Navigating to VideoCallScreen for channel: $channelName")
+                                                    navController.navigate(Screen.VideoCall.createRoute(patientId)) { // Pass patientId as conversationId
+                                                        launchSingleTop = true
+                                                    }
+
+                                                } else {
+                                                    Log.e("ConversationDetail", "Firestore document 'static_channel_name' is missing 'channel_name' or 'token' fields.")
+                                                    Toast.makeText(context, "Failed to get call channel details.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else {
+                                                Log.e("ConversationDetail", "Firestore document 'static_channel_name' not found.")
+                                                Toast.makeText(context, "Call channel details document not found.", Toast.LENGTH_SHORT).show()
+                                            }
+
+                                        } catch (e: Exception) {
+                                            Log.e("ConversationDetail", "Failed to initiate video call: ${e.message}", e)
+                                            Toast.makeText(context, "Failed to initiate video call.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                } else {
+                                    Log.w("ConversationDetail", "Cannot initiate video call: Doctor ID or Patient ID is null/blank.")
+                                    Toast.makeText(context, "Cannot initiate call. User or patient ID missing.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            enabled = currentUserId != null && conversation != null,// Enable if user is logged in and conversation details loaded
+                            colors = ButtonDefaults.buttonColors(colorResource(id = R.color.darkPrimary)),
+                            modifier = Modifier.padding(1.dp),
+                            shape = RoundedCornerShape(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VideoCall,
+                                contentDescription = "Start Video Call",
+                                modifier = Modifier
+                                    .size(36.dp) // Adjust the size as needed
+                            )
+
+
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                    }
+                }
+
+                // --- End Call Button (Only shown in VideoCallScreen now) ---
+                // This button is removed from here as ending the call happens on the VideoCallScreen.
+                // When the user ends the call on VideoCallScreen, it will navigate back here.
+            }
 
         }
         Column(
@@ -176,11 +292,23 @@ fun ConversationDetailScreen(
                                 try {
                                     // Fetch the result details when "View Result" is clicked
                                     val resultDetails = resultRepository.getResultById(resultId)
-                                    selectedResultForViewDialog = resultDetails // Update state to show dialog
-                                    Log.d("ConversationDetail", "Fetched result details for dialog: $resultId")
+                                    selectedResultForViewDialog =
+                                        resultDetails // Update state to show dialog
+                                    Log.d(
+                                        "ConversationDetail",
+                                        "Fetched result details for dialog: $resultId"
+                                    )
                                 } catch (e: Exception) {
-                                    Log.e("ConversationDetail", "Failed to fetch result details for $resultId: ${e.message}", e)
-                                    Toast.makeText(context, "Failed to load result details.", Toast.LENGTH_SHORT).show()
+                                    Log.e(
+                                        "ConversationDetail",
+                                        "Failed to fetch result details for $resultId: ${e.message}",
+                                        e
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        "Failed to load result details.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             }
                         }
@@ -199,7 +327,9 @@ fun ConversationDetailScreen(
                     value = messageInput,
                     onValueChange = { messageInput = it },
                     label = { Text("Enter message") },
-                    modifier = Modifier.weight(1f).padding(end = 8.dp), // Take available space
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp), // Take available space
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     enabled = currentUserId != null && !isSendingMessage // Disable if not logged in or sending
                 )
@@ -222,8 +352,16 @@ fun ConversationDetailScreen(
                                     messageInput = "" // Clear the input field on success
                                     Log.d("ConversationDetail", "Message sent successfully!")
                                 } catch (e: Exception) {
-                                    Log.e("ConversationDetail", "Failed to send message: ${e.message}", e)
-                                    Toast.makeText(context, "Failed to send message: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    Log.e(
+                                        "ConversationDetail",
+                                        "Failed to send message: ${e.message}",
+                                        e
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        "Failed to send message: ${e.message}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 } finally {
                                     isSendingMessage = false // Stop sending loading
                                 }
@@ -233,7 +371,10 @@ fun ConversationDetailScreen(
                     enabled = messageInput.isNotBlank() && currentUserId != null && !isSendingMessage // Enable only if text is not blank, user is logged in, and not already sending
                 ) {
                     if (isSendingMessage) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White) // Show loading on button
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Color.White
+                        ) // Show loading on button
                     } else {
                         Icon(imageVector = Icons.Default.Send, contentDescription = "Send Message")
                     }
@@ -250,6 +391,13 @@ fun ConversationDetailScreen(
             }
         )
     }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            Log.d("ConversationDetail", "ConversationDetailScreen leaving composition.")
+            // Any cleanup specific to messaging or this screen can go here
+        }
+    }
 }
 
 @Composable
@@ -259,7 +407,8 @@ fun MessageItem(
     onViewResultClick: (resultId: String) -> Unit
 ) {
     val horizontalAlignment = if (isCurrentUser) Alignment.End else Alignment.Start
-    val bubbleColor = if (isCurrentUser) colorResource(id = R.color.darkPrimary) else Color.LightGray // Color of the message bubble
+    val bubbleColor =
+        if (isCurrentUser) colorResource(id = R.color.darkPrimary) else Color.LightGray // Color of the message bubble
     val textColor = if (isCurrentUser) Color.White else Color.Black // Text color
 
     // Optional: Format message timestamp for display
@@ -297,7 +446,11 @@ fun MessageItem(
                     TextButton(
                         onClick = { onViewResultClick(message.resultId) }, // Call the lambda
                         // Optional: Customize button appearance
-                        colors = ButtonDefaults.textButtonColors(contentColor = if(isCurrentUser) Color.White.copy(alpha = 0.7f) else Color.DarkGray) // Make text button color adaptive
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (isCurrentUser) Color.White.copy(
+                                alpha = 0.7f
+                            ) else Color.DarkGray
+                        ) // Make text button color adaptive
                     ) {
                         Text("View Result")
                     }
