@@ -72,12 +72,11 @@ fun HomeScreen(navController: NavController, modifier: Modifier = Modifier) {
             }
             Spacer(modifier = Modifier.height(32.dp))
             Image(
-                painter = painterResource(id = R.drawable.scan_eye),
+                painter = painterResource(id = R.drawable.eye_logo),
                 contentDescription = "image 1",
-                colorFilter = ColorFilter.tint(colorResource(id = R.color.darkPrimary)),
                 modifier = Modifier
-                    .width(80.dp)
-                    .height(80.dp),
+                    .width(100.dp)
+                    .height(100.dp),
                 contentScale = ContentScale.Crop
             )
             Spacer(modifier = Modifier.height(32.dp))

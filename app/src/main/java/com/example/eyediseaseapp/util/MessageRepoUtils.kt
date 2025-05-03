@@ -16,7 +16,7 @@ class MessageRepoUtils {
     private val auth = FirebaseAuth.getInstance()
     private val userUtils = UserUtils()
 
-    private suspend fun findAdminUid(): String? {
+    suspend fun findAdminUid(): String? {
         return try {
             Log.d("MessageRepo", "Attempting to find admin UID...")
             val adminQuery = firestore.collection("users")

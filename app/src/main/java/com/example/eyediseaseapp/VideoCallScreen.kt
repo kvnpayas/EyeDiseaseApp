@@ -4,9 +4,11 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
+import android.view.Gravity
 import android.view.SurfaceView
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.* // Material 3 components
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +32,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
+import com.example.eyediseaseapp.util.CallNotification
 import com.example.eyediseaseapp.util.MessageRepoUtils
+import com.example.eyediseaseapp.util.UserUtils
 import com.google.firebase.auth.FirebaseAuth // Import FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import io.agora.rtc2.Constants
@@ -39,6 +45,9 @@ import io.agora.rtc2.video.VideoEncoderConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch // Import launch
 import io.agora.rtc2.ChannelMediaOptions
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.tasks.await
 
 // --- Agora SDK Imports (Add these to your build.gradle) ---
 // implementation("io.agora.rtc:full-sdk:4.3.0") // Or the latest version
@@ -79,13 +88,55 @@ fun VideoCallScreen(
     var callState by remember { mutableStateOf(CallState.IDLE) } // Manage call state within this screen
     var remoteUserIdInCall by remember { mutableStateOf<Int?>(null) } // Agora uses Int UIDs for users in channel
 
+    var isLocalVideoEnabled by remember { mutableStateOf(true) }
+    var isRemoteVideoActive by remember { mutableStateOf(false) }
+
     // --- Agora Video Views ---
     // Manage these views' lifecycle and state
     var localSurfaceView by remember { mutableStateOf<SurfaceView?>(null) }
     var remoteSurfaceView by remember { mutableStateOf<SurfaceView?>(null) }
 
+    val userRepository = remember { UserUtils() }
+
     val messageRepository = remember { MessageRepoUtils() }
     val coroutineScope = rememberCoroutineScope()
+
+    var channelName by remember { mutableStateOf<String?>(null) }
+    var rtcToken by remember { mutableStateOf<String?>(null) }
+    var isLoadingCallDetails by remember { mutableStateOf(true) }
+    var callDetailsError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(conversationId) { // Use conversationId (patientId) as the key
+        Log.d("VideoCallScreen", "LaunchedEffect: Fetching call details for patient ID: $conversationId from call_notifications.")
+        isLoadingCallDetails = true
+        callDetailsError = null
+        try {
+            // Fetch the call notification document for this patient
+            val notificationDocRef = FirebaseFirestore.getInstance().collection("call_notifications").document(conversationId)
+            val document = notificationDocRef.get().await()
+
+            if (document.exists()) {
+                // Assuming CallNotification data class exists and has channelName and rtcToken fields
+                val notification = document.toObject(CallNotification::class.java)
+                if (notification != null) {
+                    channelName = notification.channelName
+                    rtcToken = notification.rtcToken
+                    Log.d("VideoCallScreen", "Fetched channelName: $channelName, rtcToken: ${rtcToken?.take(5)}... from call_notifications.")
+                } else {
+                    callDetailsError = "Failed to parse call notification data."
+                    Log.e("VideoCallScreen", "Failed to parse call notification document for patient ID: $conversationId")
+                }
+            } else {
+                callDetailsError = "Call details document not found in call_notifications."
+                Log.e("VideoCallScreen", "Call notification document not found for patient ID: $conversationId")
+            }
+        } catch (e: Exception) {
+            callDetailsError = e.message ?: "Failed to fetch call details."
+            Log.e("VideoCallScreen", "Error fetching call details for patient ID $conversationId: ${e.message}", e)
+        } finally {
+            isLoadingCallDetails = false
+        }
+    }
 
     // --- Permission Launcher for Camera and Mic ---
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -95,23 +146,34 @@ fun VideoCallScreen(
             val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
             if (cameraGranted && audioGranted) {
                 Log.d("VideoCallScreen", "Camera and Audio permissions granted.")
-                // Permissions granted, proceed with initiating the call
-                // Call the function defined outside the composable
-                initiateAgoraCall(context, currentUserId, conversationId,
-                    onLocalViewCreated = { view ->
-                        localSurfaceView = view
-                    }, // Pass lambda to get local view
-                    onRemoteViewCreated = { view ->
-                        remoteSurfaceView = view
-                    }, // Pass lambda to get remote view
-                    onRemoteViewRemoved = {
-                        remoteSurfaceView = null
-                    } // Pass lambda to remove remote view
-                ) { newState, remoteUid ->
-                    // Update the composable's state based on the result of initiateAgoraCall
-                    callState = newState
-                    remoteUserIdInCall = remoteUid
+                // Permissions granted, proceed with initiating the call ONLY if details are loaded
+                if (!isLoadingCallDetails && channelName != null && rtcToken != null) {
+                    initiateAgoraCall(context, currentUserId, conversationId,
+                        onLocalViewCreated = { view ->
+                            localSurfaceView = view
+                        }, // Pass lambda to get local view
+                        onRemoteViewCreated = { view ->
+                            remoteSurfaceView = view
+                            isRemoteVideoActive = true
+                        }, // Pass lambda to get remote view
+                        onRemoteViewRemoved = {
+                            remoteSurfaceView = null
+                            isRemoteVideoActive = false
+                        }, // Pass lambda to remove remote view
+                        { newState, remoteUid ->
+                            // Update the composable's state based on the result of initiateAgoraCall
+                            callState = newState
+                            remoteUserIdInCall = remoteUid
+                        },
+                        coroutineScope = coroutineScope
+                    )
+                } else {
+                    Log.w("VideoCallScreen", "Permissions granted, but call details not loaded or errored. Cannot initiate call.")
+                    Toast.makeText(context, "Failed to get call details. Cannot start call.", Toast.LENGTH_LONG).show()
+                    // Pass conversationId (patientId), currentUserId, and userRepository to endVideoCall for navigation and cleanup
+                    endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call
                 }
+
             } else {
                 Log.w("VideoCallScreen", "Camera or Audio permissions denied.")
                 // Permissions denied, handle accordingly (e.g., show a message)
@@ -121,10 +183,12 @@ fun VideoCallScreen(
                     Toast.LENGTH_LONG
                 ).show()
                 // Call the function defined outside the composable
-                endVideoCall(navController, conversationId, messageRepository, coroutineScope) // End call attempt if permissions are denied
+                // Pass conversationId (patientId), currentUserId, and userRepository to endVideoCall for navigation and cleanup
+                endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call // End call attempt if permissions are denied
             }
         }
     )
+
 
     // --- Function to check and request permissions ---
     fun checkAndRequestPermissions() {
@@ -139,22 +203,32 @@ fun VideoCallScreen(
 
         if (cameraPermission && audioPermission) {
             Log.d("VideoCallScreen", "Camera and Audio permissions already granted.")
-            // Permissions already granted, proceed with call initiation
-            // Call the function defined outside the composable
-            initiateAgoraCall(context, currentUserId, conversationId,
-                onLocalViewCreated = { view ->
-                    localSurfaceView = view
-                }, // Pass lambda to get local view
-                onRemoteViewCreated = { view ->
-                    remoteSurfaceView = view
-                }, // Pass lambda to get remote view
-                onRemoteViewRemoved = {
-                    remoteSurfaceView = null
-                } // Pass lambda to remove remote view
-            ) { newState, remoteUid ->
-                // Update the composable's state based on the result of initiateAgoraCall
-                callState = newState
-                remoteUserIdInCall = remoteUid
+            // Permissions already granted, proceed with call initiation ONLY if details are loaded
+            if (!isLoadingCallDetails && channelName != null && rtcToken != null) {
+                initiateAgoraCall(context, currentUserId, conversationId,
+                    onLocalViewCreated = { view ->
+                        localSurfaceView = view
+                    }, // Pass lambda to get local view
+                    onRemoteViewCreated = { view ->
+                        remoteSurfaceView = view
+                        isRemoteVideoActive = true
+                    }, // Pass lambda to get remote view
+                    onRemoteViewRemoved = {
+                        remoteSurfaceView = null
+                        isRemoteVideoActive = false
+                    }, // Pass lambda to remove remote view
+                    { newState, remoteUid ->
+                        // Update the composable's state based on the result of initiateAgoraCall
+                        callState = newState
+                        remoteUserIdInCall = remoteUid
+                    },
+                    coroutineScope = coroutineScope
+                )
+            } else {
+                Log.w("VideoCallScreen", "Permissions granted, but call details not loaded or errored. Cannot initiate call.")
+                Toast.makeText(context, "Failed to get call details. Cannot start call.", Toast.LENGTH_LONG).show()
+                // Pass conversationId (patientId), currentUserId, and userRepository to endVideoCall for navigation and cleanup
+                endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call
             }
         } else {
             Log.d("VideoCallScreen", "Requesting Camera and Audio permissions.")
@@ -171,29 +245,90 @@ fun VideoCallScreen(
 
     // --- Trigger permission check and call initiation when screen enters composition ---
     // This assumes the screen is navigated to when a call is intended to start.
-    LaunchedEffect(Unit) {
-        Log.d("VideoCallScreen", "VideoCallScreen entered composition. Checking permissions.")
-        // We set the state to OUTGOING *before* checking permissions, as the check
-        // is part of the initiation process. The state will change to IN_CALL
-        // upon successful channel join or back to IDLE/error on failure.
-        callState = CallState.OUTGOING
-        checkAndRequestPermissions() // Start the permission check and call initiation process
+    LaunchedEffect(isLoadingCallDetails, channelName, rtcToken) { // Keys are loading state and fetched details
+        Log.d("VideoCallScreen", "LaunchedEffect (Call Initiation): isLoadingCallDetails: $isLoadingCallDetails, channelName: $channelName, rtcToken: ${rtcToken?.take(5)}...")
+        if (!isLoadingCallDetails && channelName != null && rtcToken != null) {
+            Log.d("VideoCallScreen", "Call details loaded, checking permissions to initiate Agora call.")
+            callState = CallState.OUTGOING // Set state to outgoing while connecting
+            checkAndRequestPermissions()
+        } else if (!isLoadingCallDetails && (channelName == null || rtcToken == null)) {
+            // Call details loaded, but missing channel or token
+            Log.e("VideoCallScreen", "Call details loaded, but channel name or token is null. Cannot initiate call.")
+            Toast.makeText(context, callDetailsError ?: "Failed to get call details.", Toast.LENGTH_LONG).show()
+            callState = CallState.IDLE // Set state to idle on failure
+            // Pass conversationId (patientId), currentUserId, and userRepository to endVideoCall for navigation and cleanup
+            endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call
+        } else if (callDetailsError != null) {
+            // Call details fetching failed
+            Log.e("VideoCallScreen", "Call details fetching failed. Cannot initiate call.")
+            Toast.makeText(context, callDetailsError ?: "Failed to get call details.", Toast.LENGTH_LONG).show()
+            callState = CallState.IDLE // Set state to idle on failure
+            // Pass conversationId (patientId), currentUserId, and userRepository to endVideoCall for navigation and cleanup
+            endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call
+        }
+        // If isLoadingCallDetails is true, this LaunchedEffect will wait.
+    }
+
+    LaunchedEffect(conversationId) {
+        Log.d("VideoCallScreen", "LaunchedEffect (Status Listener): Starting listener for patient ID: $conversationId")
+        // Assuming MessageRepoUtils has a getCallNotificationForPatient function that returns a Flow
+        messageRepository.getCallNotificationForPatient(conversationId).collect { notification ->
+            Log.d("VideoCallScreen", "Status Listener: Received notification update: $notification")
+            // If the notification status changes to "rejected", "ended", or "missed", end the call
+            if (notification?.status == "rejected" || notification?.status == "ended" || notification?.status == "missed") {
+                Log.d("VideoCallScreen", "Status Listener: Call status changed to ${notification.status}. Ending call.")
+                // Use the existing endVideoCall function to clean up Agora and navigate
+                // We don't need to update the status again here, as it was updated by the other party
+                // Pass the necessary dependencies to endVideoCall
+                endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call
+            } else if (notification == null) {
+                // If the document is deleted while on the call screen (e.g., doctor deletes it)
+                Log.d("VideoCallScreen", "Status Listener: Call notification document deleted. Ending call.")
+                // Pass the necessary dependencies to endVideoCall
+                endVideoCall(navController, conversationId, messageRepository, coroutineScope) // Simplified call
+            }
+            // If status is "calling" or "accepted", the call continues, no action needed here.
+        }
     }
 
 
     // --- Cleanup when the composable leaves the composition ---
     DisposableEffect(Unit) {
         onDispose {
-            Log.d(
-                "VideoCallScreen",
-                "VideoCallScreen leaving composition. Ending call and cleaning up Agora."
-            )
+            Log.d("VideoCallScreen", "VideoCallScreen leaving composition. Ending call and cleaning up Agora and notification.")
             // Ensure call is ended and Agora resources are released
             // Call the function defined outside the composable
-            endVideoCall(navController, conversationId, messageRepository, coroutineScope) // End any active call and navigate back
-            // Note: endVideoCall already handles cleanup and navigation back.
-            // We call it here in onDispose to ensure cleanup if the screen is
-            // dismissed by means other than clicking the End Call button (e.g., back button).
+            // We update the status to "ended" so the other party knows.
+            // The status listener above might also trigger if the other party ended first.
+            // It's safe to call update here; it will just overwrite if the status is already ended/rejected/missed.
+            coroutineScope.launch {
+                try {
+                    // Check current status before updating to avoid overwriting a terminated state
+                    val notification = messageRepository.getCallNotificationForPatient(conversationId).firstOrNull() // Get current state
+                    if (notification?.status == "calling" || notification?.status == "accepted") {
+                        messageRepository.updateCallNotificationStatus(conversationId, "ended")
+                        Log.d("VideoCallScreen", "DisposableEffect: Updated call notification status to 'ended' for patient $conversationId.")
+                    } else {
+                        Log.d("VideoCallScreen", "DisposableEffect: Call notification status is already ${notification?.status ?: "null"}. No status update needed.")
+                    }
+                } catch (e: Exception) {
+                    Log.e("VideoCallScreen", "DisposableEffect: Failed to update call notification status to 'ended' for patient $conversationId: ${e.message}", e)
+                } finally {
+                    // Ensure Agora engine is destroyed regardless of status update success
+                    val engine = mRtcEngine
+                    if (engine != null) {
+                        engine.stopPreview()
+                        engine.leaveChannel()
+                        engine.enableLocalVideo(false)
+                        engine.enableLocalAudio(false) // Disable local audio as well
+                        RtcEngine.destroy()
+                        mRtcEngine = null
+                        Log.d("AgoraRTC", "DisposableEffect: RtcEngine destroyed.")
+                    } else {
+                        Log.d("AgoraRTC", "DisposableEffect: RtcEngine instance is null.")
+                    }
+                }
+            }
         }
     }
 
@@ -215,11 +350,25 @@ fun VideoCallScreen(
                 update = { frameLayout ->
                     Log.d("VideoCallScreen", "Remote AndroidView update triggered. remoteSurfaceView is: ${remoteSurfaceView}")
                     frameLayout.removeAllViews()
-                    remoteSurfaceView?.let { view ->
-                        (view.parent as? ViewGroup)?.removeView(view)
-                        frameLayout.addView(view)
-                        Log.d("VideoCallScreen", "Added remoteSurfaceView to Remote FrameLayout.")
-                    } ?: Log.d("VideoCallScreen", "remoteSurfaceView is null, removing views from remote container.")
+                    if (isRemoteVideoActive && remoteSurfaceView != null) {
+                        remoteSurfaceView?.let { view ->
+                            (view.parent as? ViewGroup)?.removeView(view) // Remove from old parent if any
+                            frameLayout.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) // Add with layout params
+                            Log.d("VideoCallScreen", "Added remoteSurfaceView to Remote FrameLayout because video is active.")
+                        } ?: Log.d("VideoCallScreen", "remoteSurfaceView is null unexpectedly when trying to add.")
+                    } else {
+                        // If remote video is NOT active, show "No camera" text
+                        Log.d("VideoCallScreen", "Remote video is not active or remoteSurfaceView is null, showing 'No camera' text.")
+                        val textView = TextView(context).apply {
+                            text = "No camera"
+                            setTextColor(android.graphics.Color.WHITE) // White text color
+                            textSize = 18f // Text size
+                            gravity = Gravity.CENTER // Center the text within the TextView's bounds
+                        }
+                        frameLayout.addView(textView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                            gravity = Gravity.CENTER // Center the TextView within the FrameLayout
+                        })
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -235,11 +384,16 @@ fun VideoCallScreen(
                 update = { frameLayout ->
                     Log.d("VideoCallScreen", "Local AndroidView update triggered. localSurfaceView is: ${localSurfaceView}")
                     frameLayout.removeAllViews()
-                    localSurfaceView?.let { view ->
-                        (view.parent as? ViewGroup)?.removeView(view)
-                        frameLayout.addView(view)
-                        Log.d("VideoCallScreen", "Added localSurfaceView to Local FrameLayout.")
-                    } ?: Log.d("VideoCallScreen", "localSurfaceView is null, removing views from local container.")
+                    if (isLocalVideoEnabled) {
+                        localSurfaceView?.let { view ->
+                            (view.parent as? ViewGroup)?.removeView(view)
+                            frameLayout.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) // Add with layout params
+                            Log.d("VideoCallScreen", "Added localSurfaceView to Local FrameLayout because video is enabled.")
+                        } ?: Log.d("VideoCallScreen", "localSurfaceView is null but video is enabled, cannot add.")
+                    } else {
+                        // When video is disabled, the FrameLayout will be empty, showing its background
+                        Log.d("VideoCallScreen", "Local video is disabled, removing views from local container.")
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -265,23 +419,74 @@ fun VideoCallScreen(
                 .padding(top = 8.dp) // Add some padding below the top edge
         )
 
-        // --- End Call Button (Overlayed at the bottom) ---
-        Button(
-            onClick = {
-                Log.d("VideoCallScreen", "End Call Button Clicked")
-                endVideoCall(navController, conversationId, messageRepository, coroutineScope)
-            },
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter) // Position at the bottom-center
-                .padding(bottom = 32.dp), // Add padding above the bottom edge
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                .padding(bottom = 32.dp) // Add padding above the bottom edge
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp), // Add horizontal padding
+            horizontalArrangement = Arrangement.SpaceEvenly, // Distribute buttons evenly
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "End Video Call"
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("End Call")
+            // --- Toggle Video Button ---
+            Button(
+                onClick = {
+                    Log.d("VideoCallScreen", "Toggle Video Button Clicked. Current state: $isLocalVideoEnabled")
+                    val engine = mRtcEngine
+                    if (engine != null) {
+                        if (isLocalVideoEnabled) {
+                            // Disable local video
+                            engine.enableLocalVideo(false)
+                            Log.d("AgoraRTC", "enableLocalVideo(false) called.")
+                            isLocalVideoEnabled = false // Update state
+                        } else {
+                            // Enable local video
+                            engine.enableLocalVideo(true)
+                            Log.d("AgoraRTC", "enableLocalVideo(true) called.")
+                            isLocalVideoEnabled = true // Update state
+                        }
+                    } else {
+                        Log.w("VideoCallScreen", "RtcEngine is null, cannot toggle video.")
+                        Toast.makeText(context, "Call not active, cannot toggle video.", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray) // Example color
+            ) {
+                Icon(
+                    imageVector = if (isLocalVideoEnabled) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                    contentDescription = if (isLocalVideoEnabled) "Disable Video" else "Enable Video"
+                )
+            }
+
+            // --- End Call Button ---
+            Button(
+                onClick = {
+                    Log.d("VideoCallScreen", "End Call Button Clicked")
+                    // This button should trigger the end call logic which also navigates back
+                    // The DisposableEffect will handle the cleanup when navigation happens
+                    endVideoCall(navController, conversationId, messageRepository, coroutineScope)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close, // Using Close icon for End Call
+                    contentDescription = "End Video Call"
+                )
+                Spacer(modifier = Modifier.width(4.dp)) // Optional space
+                Text("End Call")
+            }
+
+            // --- Toggle Audio Button (Placeholder for future) ---
+            // You can add a similar button for audio using enableLocalAudio(true/false)
+            // Button(
+            //     onClick = { /* TODO: Implement audio toggle */ },
+            //     colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+            // ) {
+            //     Icon(
+            //         imageVector = Icons.Default.Mic, // Requires material-icons-core
+            //         contentDescription = "Toggle Audio"
+            //     )
+            // }
         }
     }
 }
@@ -298,7 +503,8 @@ fun initiateAgoraCall(
     onLocalViewCreated: (SurfaceView) -> Unit,
     onRemoteViewCreated: (SurfaceView) -> Unit,
     onRemoteViewRemoved: () -> Unit,
-    stateUpdate: (CallState, Int?) -> Unit
+    stateUpdate: (CallState, Int?) -> Unit,
+    coroutineScope: CoroutineScope
 ) {
     if (currentUserId == null) {
         Log.w("VideoCallScreen", "Cannot initiate Agora call: User not logged in.")
@@ -335,16 +541,6 @@ fun initiateAgoraCall(
                                     Log.d("AgoraRTC", "Joined channel $channel with uid $uid")
                                     stateUpdate(CallState.IN_CALL, null)
 
-                                    setupLocalVideo(context, mRtcEngine, onLocalViewCreated)
-
-                                    val startPreviewResult = mRtcEngine?.startPreview()
-                                    Log.d("AgoraRTC", "startPreview result: $startPreviewResult (0 indicates success)")
-
-                                    // These should ideally be enabled before joining, but confirming here.
-                                    mRtcEngine?.enableAudio()
-                                    mRtcEngine?.enableVideo()
-                                    mRtcEngine?.enableLocalAudio(true)
-                                    mRtcEngine?.enableLocalVideo(true)
                                     Log.d("AgoraRTC", "onJoinChannelSuccess: Audio and Video enabled/local enabled.")
 
                                     // --- Configure Video Encoder (Optional but Recommended) ---
@@ -449,7 +645,15 @@ fun initiateAgoraCall(
 
                     // Explicitly enable local video capture and rendering
                     mRtcEngine?.enableLocalVideo(true)
+                    mRtcEngine?.enableLocalAudio(true)
                     Log.d("AgoraRTC", "Local video enabled explicitly.")
+
+                    setupLocalVideo(context, mRtcEngine, onLocalViewCreated)
+
+                    val startPreviewResult = mRtcEngine?.startPreview()
+                    Log.d("AgoraRTC", "startPreview result: $startPreviewResult (0 indicates success)")
+                    coroutineScope.launch { // Launch a coroutine to perform the delay
+                        delay(500)
 
                     val options = ChannelMediaOptions()
                     options.clientRoleType = Constants.CLIENT_ROLE_BROADCASTER // Or PUBLISHER
@@ -464,6 +668,7 @@ fun initiateAgoraCall(
                         Log.e("AgoraRTC", "Failed to join channel. Result code: $joinChannelResult")
                         Toast.makeText(context, "Failed to join call channel.", Toast.LENGTH_SHORT).show()
                         stateUpdate(CallState.IDLE, null)
+                    }
                     }
 
 
@@ -492,8 +697,8 @@ fun initiateAgoraCall(
 fun endVideoCall(
     navController: NavController,
     patientId: String, // The patientId (conversationId) for notification cleanup
-    messageRepository: MessageRepoUtils,
-    coroutineScope: CoroutineScope
+    messageRepository: MessageRepoUtils, // Assuming MessageRepoUtils is your repository
+    coroutineScope: CoroutineScope // Pass CoroutineScope for async operations
 ) {
     Log.d("VideoCallScreen", "Ending video call...")
     val engine = mRtcEngine
@@ -505,39 +710,58 @@ fun endVideoCall(
         Log.d("AgoraRTC", "Left channel.")
 
         engine.enableLocalVideo(false)
-        Log.d("AgoraRTC", "Local video disabled explicitly.")
+        engine.enableLocalAudio(false) // Disable local audio as well
+        Log.d("AgoraRTC", "Local video and audio disabled explicitly.")
 
-//        engine.destroy()
+
+        RtcEngine.destroy() // Use engine.destroy() on the instance
         Log.d("AgoraRTC", "RtcEngine destroyed.")
         mRtcEngine = null
 
-        // --- Delete the call notification document ---
-        // Use the provided coroutineScope to launch the suspend function
+        // --- Update the call notification document and navigate ---
         coroutineScope.launch {
             try {
-                messageRepository.deleteCallNotification(patientId)
-                Log.d("VideoCallScreen", "Call notification deleted for patient $patientId.")
+                // Check current status before updating to avoid overwriting a terminated state
+                val notification = messageRepository.getCallNotificationForPatient(patientId).firstOrNull() // Get current state
+                if (notification?.status == "calling" || notification?.status == "accepted") {
+                    messageRepository.updateCallNotificationStatus(patientId, "ended")
+                    Log.d("VideoCallScreen", "End Call: Updated call notification status to 'ended' for patient $patientId.")
+                } else {
+                    Log.d("VideoCallScreen", "End Call: Call notification status is already ${notification?.status ?: "null"}. No status update needed.")
+                }
             } catch (e: Exception) {
-                Log.e("VideoCallScreen", "Failed to delete call notification for patient $patientId: ${e.message}", e)
+                Log.e("VideoCallScreen", "End Call: Failed to update call notification status to 'ended' for patient $patientId: ${e.message}", e)
                 // Handle error (e.g., show a Toast, although call is ending anyway)
+            } finally {
+                // --- Navigate directly to ConversationsListScreen ---
+                Log.d("VideoCallScreen", "End Call: Navigating to ConversationsListScreen.")
+                navController.navigate(Screen.ConversationsList.route) {
+                    // Pop up to ConversationsList to avoid multiple video call screens in stack
+                    popUpTo(Screen.ConversationsList.route) { inclusive = false }
+                    launchSingleTop = true // Avoid creating multiple copies
+                }
             }
         }
-
     } else {
         Log.d("AgoraRTC", "RtcEngine instance is null, no need to leave or destroy.")
-        // --- Still attempt to delete the call notification if engine was null ---
+        // --- Still attempt to update/delete the call notification if engine was null ---
         coroutineScope.launch {
             try {
-                messageRepository.deleteCallNotification(patientId)
-                Log.d("VideoCallScreen", "Call notification deleted for patient $patientId (engine was null).")
+                // Attempt to update status even if engine is null
+                messageRepository.updateCallNotificationStatus(patientId, "ended")
+                Log.d("VideoCallScreen", "End Call (Engine Null): Call notification status updated to 'ended' for patient $patientId.")
             } catch (e: Exception) {
-                Log.e("VideoCallScreen", "Failed to delete call notification for patient $patientId (engine was null): ${e.message}", e)
+                Log.e("VideoCallScreen", "End Call (Engine Null): Failed to update call notification status for patient $patientId: ${e.message}", e)
+            } finally {
+                // --- Navigate directly to ConversationsListScreen (even if engine was null) ---
+                Log.d("VideoCallScreen", "End Call (Engine Null): Navigating to ConversationsListScreen.")
+                navController.navigate(Screen.ConversationsList.route) {
+                    popUpTo(Screen.ConversationsList.route) { inclusive = false }
+                    launchSingleTop = true
+                }
             }
         }
     }
-
-    Log.d("VideoCallScreen", "Video call ended. Navigating back.")
-    navController.popBackStack()
 }
 
 fun setupLocalVideo(
