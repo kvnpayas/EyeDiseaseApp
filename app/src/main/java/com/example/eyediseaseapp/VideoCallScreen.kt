@@ -35,8 +35,10 @@ import io.agora.rtc2.Constants
 import io.agora.rtc2.IRtcEngineEventHandler
 import io.agora.rtc2.RtcEngine
 import io.agora.rtc2.video.VideoCanvas
+import io.agora.rtc2.video.VideoEncoderConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch // Import launch
+import io.agora.rtc2.ChannelMediaOptions
 
 // --- Agora SDK Imports (Add these to your build.gradle) ---
 // implementation("io.agora.rtc:full-sdk:4.3.0") // Or the latest version
@@ -337,6 +339,25 @@ fun initiateAgoraCall(
 
                                     val startPreviewResult = mRtcEngine?.startPreview()
                                     Log.d("AgoraRTC", "startPreview result: $startPreviewResult (0 indicates success)")
+
+                                    // These should ideally be enabled before joining, but confirming here.
+                                    mRtcEngine?.enableAudio()
+                                    mRtcEngine?.enableVideo()
+                                    mRtcEngine?.enableLocalAudio(true)
+                                    mRtcEngine?.enableLocalVideo(true)
+                                    Log.d("AgoraRTC", "onJoinChannelSuccess: Audio and Video enabled/local enabled.")
+
+                                    // --- Configure Video Encoder (Optional but Recommended) ---
+                                    // Helps control resolution, frame rate, bitrate
+//                                    val videoConfig = VideoEncoderConfiguration(
+//                                        VideoEncoderConfiguration.VD_640x360, // Resolution
+//                                        VideoEncoderConfiguration.FRAME_RATE.FRAME_RATE_FPS_15, // Frame rate
+//                                        VideoEncoderConfiguration.STANDARD_BITRATE, // Bitrate
+//                                        VideoEncoderConfiguration.ORIENTATION_MODE.ORIENTATION_MODE_ADAPTIVE // Orientation
+//                                    )
+//                                    mRtcEngine?.setVideoEncoderConfiguration(videoConfig)
+//                                    Log.d("AgoraRTC", "onJoinChannelSuccess: Video encoder configured.")
+
                                 }
                                 override fun onUserJoined(uid: Int, elapsed: Int) {
                                     Log.d("AgoraRTC", "Remote user joined: $uid")
@@ -362,6 +383,53 @@ fun initiateAgoraCall(
 //                                        Constants.LOCAL_VIDEO_STREAM_STATE_FAILED -> Log.e("AgoraRTC", "Local video stream failed. Error: $error")
 //                                    }
 //                                }
+
+                                override fun onLocalVideoStateChanged(
+                                    source: Constants.VideoSourceType?,
+                                    state: Int,
+                                    error: Int
+                                ) {
+                                    Log.d("AgoraRTC", "onLocalVideoStateChanged: Source: $source, State: $state, Error: $error")
+                                    when (state) {
+                                        Constants.LOCAL_VIDEO_STREAM_STATE_STOPPED -> Log.d("AgoraRTC", "Local video stream stopped.")
+                                        Constants.LOCAL_VIDEO_STREAM_STATE_CAPTURING -> Log.d("AgoraRTC", "Local video stream capturing.")
+                                        Constants.LOCAL_VIDEO_STREAM_STATE_ENCODING -> Log.d("AgoraRTC", "Local video stream encoding.")
+                                        Constants.LOCAL_VIDEO_STREAM_STATE_FAILED -> Log.e("AgoraRTC", "Local video stream failed. Error: $error")
+                                    }
+                                    // You can add more specific handling here based on state and error
+                                    if (state == Constants.LOCAL_VIDEO_STREAM_STATE_FAILED) {
+                                        // Log the specific error code
+                                        Log.e("AgoraRTC", "Local video stream failed with error: $error")
+                                        // Consider showing a Toast or updating UI state to reflect the failure
+                                    }
+                                }
+
+
+                                override fun onRemoteVideoStateChanged(uid: Int, state: Int, reason: Int, elapsed: Int) {
+                                    val stateString = when(state) {
+                                        Constants.REMOTE_VIDEO_STATE_STOPPED -> "STOPPED"
+                                        Constants.REMOTE_VIDEO_STATE_STARTING -> "STARTING"
+                                        Constants.REMOTE_VIDEO_STATE_DECODING -> "DECODING"
+                                        Constants.REMOTE_VIDEO_STATE_FAILED -> "FAILED"
+                                        else -> "UNKNOWN($state)"
+                                    }
+                                    val reasonString = when(reason) {
+                                        Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_MUTED -> "REMOTE_MUTED"
+                                        Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_UNMUTED -> "REMOTE_UNMUTED"
+                                        Constants.REMOTE_VIDEO_STATE_REASON_LOCAL_MUTED -> "LOCAL_MUTED"
+                                        Constants.REMOTE_VIDEO_STATE_REASON_LOCAL_UNMUTED -> "LOCAL_UNMUTED"
+                                        Constants.REMOTE_VIDEO_STATE_REASON_REMOTE_OFFLINE -> "REMOTE_OFFLINE"
+                                        Constants.REMOTE_VIDEO_STATE_REASON_AUDIO_FALLBACK -> "AUDIO_FALLBACK"
+                                        Constants.REMOTE_VIDEO_STATE_REASON_INTERNAL -> "INTERNAL" // Add internal reason
+                                        Constants.REMOTE_VIDEO_STATE_REASON_NETWORK_CONGESTION -> "NETWORK_CONGESTION" // Add network congestion reason
+                                        Constants.REMOTE_VIDEO_STATE_REASON_CODEC_NOT_SUPPORT -> "CODEC_NOT_SUPPORT" // Add codec not support reason
+                                        else -> "UNKNOWN_REASON($reason)"
+                                    }
+                                    Log.d("AgoraRTC", "onRemoteVideoStateChanged: UID $uid, State: $stateString ($state), Reason: $reasonString ($reason)")
+                                    // If remote video state changes to RENDERING, it means the stream is received and displayed
+                                }
+
+
                             })
                             Log.d("AgoraRTC", "RtcEngine initialized with fetched App ID.")
                         } catch (e: Exception) {
@@ -376,15 +444,20 @@ fun initiateAgoraCall(
 
                     // Agora SDK: Enable video
                     mRtcEngine?.enableVideo()
-                    Log.d("AgoraRTC", "Video enabled.")
+                    mRtcEngine?.enableAudio() // Ensure audio is enabled
+                    Log.d("AgoraRTC", "Video and Audio enabled.")
 
                     // Explicitly enable local video capture and rendering
                     mRtcEngine?.enableLocalVideo(true)
                     Log.d("AgoraRTC", "Local video enabled explicitly.")
 
+                    val options = ChannelMediaOptions()
+                    options.clientRoleType = Constants.CLIENT_ROLE_BROADCASTER // Or PUBLISHER
+                    options.channelProfile = Constants.CHANNEL_PROFILE_COMMUNICATION // Or LIVE_BROADCASTING
+
                     // --- Agora SDK: Join Channel using fetched details ---
                     val uid = 0 // Using 0 for Agora to assign a UID
-                    val joinChannelResult = mRtcEngine?.joinChannel(rtcToken, channelName, "", uid)
+                    val joinChannelResult = mRtcEngine?.joinChannel(rtcToken, channelName, uid, options) // Pass options
                     Log.d("AgoraRTC", "joinChannel result: $joinChannelResult (0 indicates success)")
 
                     if (joinChannelResult != 0) {
@@ -392,6 +465,8 @@ fun initiateAgoraCall(
                         Toast.makeText(context, "Failed to join call channel.", Toast.LENGTH_SHORT).show()
                         stateUpdate(CallState.IDLE, null)
                     }
+
+
 
                 } else {
                     Log.e("AgoraRTC", "Firestore document 'static_channel_name' is missing 'app_id', 'channel_name', or 'token' fields.")
