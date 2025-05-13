@@ -194,6 +194,7 @@ fun ConversationsListScreen(
                         ) { conversation ->
                             ConversationListItem(
                                 conversation = conversation,
+                                userRole = userRole,
                                 onClick = {
                                     navController.navigate(Screen.ConversationDetail.createRoute(conversation.patientId)) {
                                         launchSingleTop = true
@@ -213,6 +214,7 @@ fun ConversationsListScreen(
                     Spacer(modifier = Modifier.height(16.dp)) // Add space below header
                     ConversationListItem(
                         conversation = patientConversation,
+                        userRole = userRole,
                         onClick = {
                             // Navigate to the detail screen for this conversation
                             navController.navigate(Screen.ConversationDetail.createRoute(patientConversation.patientId)) {
@@ -242,7 +244,8 @@ fun ConversationsListScreen(
 
 @Composable
 fun ConversationListItem(
-    conversation: Conversation, // The conversation data for this item
+    conversation: Conversation,
+    userRole: String?,
     onClick: () -> Unit, // Lambda to call when the item is clicked
     modifier: Modifier = Modifier // Modifier for external customization
 ) {
@@ -266,8 +269,11 @@ fun ConversationListItem(
     // This would require another LaunchedEffect and state variable within this composable
     // and a function in UserRepository to get a user's name by UID.
     // For simplicity, let's assume patientName is stored in the Conversation document.
-    val patientDisplayName =
-        conversation.lastSenderName ?: "Patient ${conversation.patientId.take(4)}..." // Fallback name
+    val displayName = when (userRole) {
+        "admin" -> conversation.patientName ?: "Unknown Patient" // Doctor sees patient name
+        "user" -> conversation.doctorName ?: "Unknown Doctor" // Patient sees doctor name
+        else -> "Unknown User" // Fallback for unknown role
+    }
 
 
     Column(
@@ -292,7 +298,7 @@ fun ConversationListItem(
         ) {
             // Patient Name
             Text(
-                text = patientDisplayName,
+                text = displayName,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = colorResource(id = R.color.darkPrimary),
